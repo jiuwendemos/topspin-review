@@ -72,7 +72,7 @@ async def coarse(
         {"type": "image_url", "image_url": {"url": imaging.to_data_url(sheet, max_width=config.max_width())}},
     ]
     text = await backend.complete(
-        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}]
+        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}], label="overview"
     )
     parsed = extract_json(text)
     parsed.setdefault("overall", "")
@@ -132,7 +132,7 @@ async def fine(
             content.append({"type": "image_url", "image_url": {"url": url}})
 
     text = await backend.complete(
-        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}]
+        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}], label="detail"
     )
     parsed = extract_json(text)
     parsed.setdefault("observations", text or "")
@@ -155,7 +155,8 @@ async def analyze_still(frame: Image.Image, profile: dict, backend=None) -> dict
         {"type": "image_url", "image_url": {"url": imaging.to_data_url(frame, max_width=config.max_width())}},
     ]
     text = await backend.complete(
-        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}]
+        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}],
+        label="reviewing image",
     )
     parsed = extract_json(text)
     parsed.setdefault("observations", text or "")

@@ -215,20 +215,27 @@ def _page_sessions() -> None:
 
     st.markdown("### History")
     for report in reversed(reports):
-        c1, c2 = st.columns([5, 1])
+        stem = Path(report.get("source", "")).stem
+        if st.session_state.get("confirm_delete") == stem:
+            c1, c2, c3 = st.columns([6, 1, 1])
+            c1.warning(f"Delete **{render.video_name(report)}**?")
+            if c2.button("Delete", key=f"confirm_{stem}", type="primary"):
+                store.delete_report(stem)
+                if st.session_state.get("latest_stem") == stem:
+                    st.session_state["latest_stem"] = None
+                st.session_state.pop(f"qa_{stem}", None)
+                st.session_state["confirm_delete"] = None
+                st.rerun()
+            if c3.button("Cancel", key=f"cancel_{stem}"):
+                st.session_state["confirm_delete"] = None
+                st.rerun()
+            continue
+        c1, c2, c3 = st.columns([8, 1, 1])
         c1.markdown(f"**{render.video_name(report)}**  \n{report.get('date', '')} — {report.get('focus', '')}")
-        if c2.button("Open", key=f"open_{render.video_name(report)}_{report.get('date', '')}"):
-            _open(Path(report.get("source", "")).stem)
-
-    with st.expander("Delete a session"):
-        labels = [f"{render.video_name(r)} · {r.get('date', '')}" for r in reports]
-        pick = st.selectbox("Session", labels, key="delete_pick")
-        confirm = st.checkbox("Yes, delete this session", key="delete_confirm")
-        if st.button("Delete", disabled=not confirm, key="delete_go"):
-            stem = Path(reports[labels.index(pick)].get("source", "")).stem
-            store.delete_report(stem)
-            if st.session_state.get("latest_stem") == stem:
-                st.session_state["latest_stem"] = None
+        if c2.button("Open", key=f"open_{stem}"):
+            _open(stem)
+        if c3.button("", icon=":material/close:", key=f"del_{stem}", type="tertiary", help="Delete this session"):
+            st.session_state["confirm_delete"] = stem
             st.rerun()
 
 
@@ -323,7 +330,7 @@ def _page_result() -> None:
     st.subheader(render.video_name(latest))
     st.caption(f"{latest.get('sport', '')} · {latest.get('date', '')}")
 
-    tab_report, tab_movement, tab_details = st.tabs(["Report", "Movement", "Details"])
+    tab_report, tab_movement, tab_details, tab_technical = st.tabs(["Report", "Movement", "Details", "Technical"])
 
     with tab_report:
         if latest.get("focus"):
@@ -416,6 +423,16 @@ def _page_result() -> None:
                 st.markdown(f"- {item}")
         quality = evaluate.score(latest)
         st.write(f"Report confidence score: {quality['score']}/100")
+        stem = Path(latest.get("source", "report")).stem
+        st.download_button(
+            "Download report (Markdown)", export.to_markdown(latest), file_name=f"{stem}_report.md", mime="text/markdown"
+        )
+        st.download_button(
+            "Download report (HTML)", export.to_html(latest), file_name=f"{stem}_report.html", mime="text/html"
+        )
+
+    with tab_technical:
+        st.caption("How this report was produced — model calls and timings.")
         usage = latest.get("usage") or {}
         if usage:
             text_u = usage.get("text") or {}
@@ -426,40 +443,134 @@ def _page_result() -> None:
                 f"{model_secs:.0f}s inside model calls "
                 f"(text {float(text_u.get('seconds', 0) or 0):.0f}s / vision {float(vision_u.get('seconds', 0) or 0):.0f}s)"
             )
+            models = usage.get("models") or {}
+            if models:
+                st.caption(
+                    f"Text model: {models.get('text', '?')} · Vision model: {models.get('vision', '?')} · "
+                    f"Provider: {models.get('provider', '?')} ({models.get('api_base', '')})"
+                )
+            vc = usage.get("vision_calls") or []
+            tc = usage.get("text_calls") or []
+            ctx = sum(int(c.get("prompt_tokens", 0) or 0) for c in vc + tc)
+            gen = sum(int(c.get("completion_tokens", 0) or 0) for c in vc + tc)
+            cached = sum(int(c.get("cached_tokens", 0) or 0) for c in vc + tc)
+            st.caption(
+                f"Tokens billed: {ctx + gen} total = {ctx} context/input + {gen} output"
+                + (f" · {cached} served from cache" if cached else "")
+                + f", across {len(vc) + len(tc)} calls. The whole context is re-sent on every call, "
+                "so each call's input already includes all prior messages."
+            )
         timings = latest.get("timings") or []
         if timings:
             import pandas as pd
 
-            calls_detail = (usage or {}).get("text_calls") or []
+            text_calls = usage.get("text_calls") or []
+            vision_calls = usage.get("vision_calls") or []
             agent_stages = ("agent writing report", "agent: analyzing")
+            vision_stage = {
+                "overview": "vision: overview",
+                "detail": "vision: detail",
+                "reviewing image": "vision: reviewing image",
+            }
+
+            children: dict[str, list[dict]] = {}
+            for call in vision_calls:
+                pin = int(call.get("prompt_tokens", 0) or 0)
+                pout = int(call.get("completion_tokens", 0) or 0)
+                cached = int(call.get("cached_tokens", 0) or 0)
+                cache_note = f", {cached} cached" if cached else ""
+                stage = vision_stage.get(call.get("label") or "", "__agent__")
+                children.setdefault(stage, []).append(
+                    {
+                        "what": f"    ↳ vision model call ({pin} context{cache_note} + {pout} out)",
+                        "seconds": float(call.get("seconds", 0) or 0),
+                    }
+                )
+            for stage in agent_stages:
+                if "__agent__" in children:
+                    children.setdefault(stage, []).extend(children.pop("__agent__"))
+
             rows: list[dict] = []
             for entry in timings:
                 stage = entry.get("stage", "")
                 secs = float(entry.get("seconds", 0) or 0)
-                rows.append({"what": stage, "seconds": secs})
-                if stage in agent_stages and calls_detail:
-                    model_secs = 0.0
-                    for i, call in enumerate(calls_detail, start=1):
-                        cs = float(call.get("seconds", 0) or 0)
-                        model_secs += cs
-                        tokens = int(call.get("total_tokens", 0) or 0)
-                        rows.append({"what": f"    ↳ model call {i} ({tokens} tokens)", "seconds": cs})
-                    rows.append(
+                rows.append({"what": stage, "seconds": f"{secs:.2f}"})
+                nested = list(children.get(stage, []))
+                if stage in agent_stages:
+                    for i, call in enumerate(text_calls, start=1):
+                        pin = int(call.get("prompt_tokens", 0) or 0)
+                        pout = int(call.get("completion_tokens", 0) or 0)
+                        cached = int(call.get("cached_tokens", 0) or 0)
+                        cache_note = f", {cached} cached" if cached else ""
+                        nested.append(
+                            {
+                                "what": f"    ↳ model call {i} ({pin} context{cache_note} + {pout} out)",
+                                "seconds": float(call.get("seconds", 0) or 0),
+                            }
+                        )
+                    model_secs = sum(r["seconds"] for r in nested)
+                    nested.append(
                         {
                             "what": "    ↳ agent overhead (tool calls, prompt building)",
                             "seconds": max(0.0, secs - model_secs),
                         }
                     )
+                rows.extend({"what": r["what"], "seconds": f"{r['seconds']:.2f}"} for r in nested)
             st.markdown("**Where the time went**")
-            st.caption("Every step in order; the report agent's model calls are nested under it.")
-            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-        stem = Path(latest.get("source", "report")).stem
-        st.download_button(
-            "Download report (Markdown)", export.to_markdown(latest), file_name=f"{stem}_report.md", mime="text/markdown"
-        )
-        st.download_button(
-            "Download report (HTML)", export.to_html(latest), file_name=f"{stem}_report.html", mime="text/html"
-        )
+            st.caption("Every step in order; each model call is nested under the step that made it.")
+            st.table(pd.DataFrame(rows))
+
+        calls_path = (latest.get("artifacts") or {}).get("calls")
+        if calls_path and Path(calls_path).exists():
+            try:
+                calls = json.loads(Path(calls_path).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                calls = []
+            if calls:
+                st.markdown("**Model calls in full**")
+                st.caption(
+                    "The exact context sent to the model (images shown as [image]) and the raw output. "
+                    "This is the full, untruncated text."
+                )
+                st.download_button(
+                    "Download all calls (JSON)",
+                    json.dumps(calls, ensure_ascii=False, indent=2),
+                    file_name="model_calls.json",
+                    mime="application/json",
+                )
+                for i, call in enumerate(calls, start=1):
+                    model = call.get("model") or ""
+                    title = f"Call {i} — {call.get('label', '')}" + (f" · {model}" if model else "")
+                    with st.expander(title):
+                        tools = call.get("tools") or []
+                        if tools:
+                            st.caption("Tools offered: " + ", ".join(tools))
+                        for message in call.get("input") or []:
+                            st.markdown(f"**{message.get('role', '')}**")
+                            st.code(message.get("content", ""), language="text")
+                        st.markdown("**output**")
+                        st.code(call.get("output", ""), language="text")
+
+        tools_path = (latest.get("artifacts") or {}).get("tools")
+        if tools_path and Path(tools_path).exists():
+            try:
+                called = json.loads(Path(tools_path).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                called = []
+            st.markdown("**Tools called**")
+            if not called:
+                st.caption("No tools were called this run.")
+            else:
+                st.caption(", ".join(f"{t.get('name', '')} ({t.get('seconds', 0)}s)" for t in called))
+                for i, tool in enumerate(called, start=1):
+                    with st.expander(f"{i}. {tool.get('name', '')} — {tool.get('seconds', 0)}s"):
+                        if tool.get("arguments"):
+                            st.markdown("**arguments**")
+                            st.code(str(tool.get("arguments")), language="text")
+                        if tool.get("error"):
+                            st.error(str(tool.get("error")))
+                        st.markdown("**result**")
+                        st.code(str(tool.get("result", "")), language="text")
 
     # Floating ask panel: only on the Result page, but visible across its tabs.
     _ask_panel()

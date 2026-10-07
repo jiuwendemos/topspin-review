@@ -40,6 +40,22 @@ def _make(model_name: str, temperature: float, timeout: int):
     return Model(model_client_config=client, model_config=request)
 
 
+def model_provider() -> str:
+    return os.getenv("MODEL_PROVIDER", "OpenAI")
+
+
+def api_base() -> str:
+    return os.getenv("API_BASE", "")
+
+
+def text_model_name() -> str:
+    return os.getenv("MODEL_NAME", "")
+
+
+def vision_model_name() -> str:
+    return os.getenv("VISION_MODEL_NAME", "deepseek-v4-flash-vision-exp")
+
+
 def make_model():
     """Text model that writes the coaching report."""
     return _make(

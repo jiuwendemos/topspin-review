@@ -145,7 +145,10 @@ async def analyze(
     tick(progress, "writing artifacts", 30)
     artifact_paths = _save_artifacts(video_path, frames, timestamps, measured, region_box)
 
-    backend = get_backend()
+    call_trace = observability.CallTrace()
+    tool_trace = observability.ToolTrace()
+    tool_trace.install()
+    backend = get_backend(trace=call_trace)
     if is_still:
         tick(progress, "vision: reviewing image", 55)
         coarse_out = {"overall": "", "attentive_windows": [], "limitations": []}
@@ -191,7 +194,7 @@ async def analyze(
 
     text_usage = observability.UsageCollector()
     agent = report_agent.build_agent(
-        model=observability.attach(config.make_model(), text_usage), rails=report_rails
+        model=observability.attach(config.make_model(), text_usage, call_trace), rails=report_rails
     )
     query = (
         f"Today is {date.today().isoformat()}. "
@@ -216,16 +219,35 @@ async def analyze(
     tick(progress, "saving report", 92)
 
     vision_usage = backend.usage_summary() if hasattr(backend, "usage_summary") else {}
+    vision_calls = backend.usage_calls() if hasattr(backend, "usage_calls") else []
     text = text_usage.summary()
     usage = {
         "vision": vision_usage,
+        "vision_calls": vision_calls,
         "text": text,
         "text_calls": text_usage.records(),
         "calls": int(vision_usage.get("calls", 0)) + int(text.get("calls", 0)),
         "total_tokens": int(vision_usage.get("total_tokens", 0)) + int(text.get("total_tokens", 0)),
+        "models": {
+            "text": config.text_model_name(),
+            "vision": config.vision_model_name(),
+            "provider": config.model_provider(),
+            "api_base": config.api_base(),
+        },
     }
     if trace_on:
         usage["callback_trace"] = trace.summary()
+
+    try:
+        stem = Path(video_path).stem
+        calls_path = runtime.ARTIFACTS_DIR / f"{stem}_calls.json"
+        calls_path.write_text(json.dumps(call_trace.calls, ensure_ascii=False, indent=2), encoding="utf-8")
+        artifact_paths["calls"] = str(calls_path)
+        tools_path = runtime.ARTIFACTS_DIR / f"{stem}_tools.json"
+        tools_path.write_text(json.dumps(tool_trace.records(), ensure_ascii=False, indent=2), encoding="utf-8")
+        artifact_paths["tools"] = str(tools_path)
+    except Exception:
+        pass
 
     report = store.patch_last_report(
         {

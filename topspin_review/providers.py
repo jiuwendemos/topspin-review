@@ -16,27 +16,42 @@ from topspin_review import config, observability
 
 
 class VisionBackend(Protocol):
-    async def complete(self, messages: list[dict[str, Any]]) -> str: ...
+    async def complete(self, messages: list[dict[str, Any]], label: str = "") -> str: ...
     def usage_summary(self) -> dict: ...
+    def usage_calls(self) -> list[dict]: ...
 
 
 class OpenAIVisionBackend:
     """Vision model via the shared OpenAI-compatible client, with retries."""
 
-    def __init__(self) -> None:
+    def __init__(self, trace=None) -> None:
         self._model = config.make_vision_model()
         self.usages: list[dict] = []
+        self._trace = trace
 
-    async def complete(self, messages: list[dict[str, Any]]) -> str:
+    async def complete(self, messages: list[dict[str, Any]], label: str = "") -> str:
         last: Exception | None = None
         for attempt in range(config.llm_retries() + 1):
             start = time.monotonic()
             try:
                 result = await asyncio.wait_for(self._model.invoke(messages), timeout=config.llm_timeout())
-                record = {"backend": "openai", "seconds": round(time.monotonic() - start, 2)}
+                record = {
+                    "backend": "openai",
+                    "label": label,
+                    "model": observability.model_name(self._model) or config.vision_model_name(),
+                    "seconds": round(time.monotonic() - start, 2),
+                }
                 record.update(observability.extract_usage(result))
                 self.usages.append(record)
-                return getattr(result, "content", str(result)) or ""
+                text = getattr(result, "content", str(result)) or ""
+                if self._trace is not None:
+                    self._trace.capture(
+                        f"vision: {label}" if label else "vision",
+                        messages,
+                        text,
+                        model=record["model"],
+                    )
+                return text
             except Exception as exc:  # noqa: BLE001
                 last = exc
                 if attempt < config.llm_retries():
@@ -46,11 +61,14 @@ class OpenAIVisionBackend:
     def usage_summary(self) -> dict:
         return {"backend": "openai", **observability.summarize(self.usages)}
 
+    def usage_calls(self) -> list[dict]:
+        return [dict(u) for u in self.usages]
+
 
 class MockVisionBackend:
     """Deterministic offline backend for tests; no network calls."""
 
-    async def complete(self, messages: list[dict[str, Any]]) -> str:
+    async def complete(self, messages: list[dict[str, Any]], label: str = "") -> str:
         text = " ".join(str(m.get("content", "")) for m in messages if isinstance(m, dict))
         if "attentive_windows" in text:
             return (
@@ -67,11 +85,12 @@ class MockVisionBackend:
     def usage_summary(self) -> dict:
         return {"backend": "mock", "calls": 0, "seconds": 0.0}
 
+    def usage_calls(self) -> list[dict]:
+        return []
 
-_BACKENDS = {"openai": OpenAIVisionBackend, "mock": MockVisionBackend}
 
-
-def get_backend(name: str | None = None) -> VisionBackend:
+def get_backend(name: str | None = None, trace=None) -> VisionBackend:
     resolved = (name or config.vision_backend()).strip().lower()
-    factory = _BACKENDS.get(resolved, OpenAIVisionBackend)
-    return factory()
+    if resolved == "mock":
+        return MockVisionBackend()
+    return OpenAIVisionBackend(trace=trace)
