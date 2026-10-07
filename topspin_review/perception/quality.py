@@ -22,22 +22,29 @@ def evaluate(meta: dict, frames: list, metrics: dict) -> dict:
     except (TypeError, ValueError):
         duration = 0.0
 
-    if fps and fps < 25:
-        warnings.append(f"low frame rate ({fps:.0f} fps) — fast footwork may be missed")
-        score -= 25
+    still = len(frames) == 1 and not fps and not duration
     if isinstance(size, (list, tuple)) and len(size) == 2 and size[1] and size[1] < 480:
         warnings.append("low resolution")
         score -= 20
-    if duration and duration < 3:
-        warnings.append("very short clip (a few rallies are better)")
+
+    if still:
+        warnings.append("single still image — only static posture can be judged (no movement/footwork)")
         score -= 15
-    if len(frames) < 8:
-        warnings.append("few frames sampled")
-        score -= 10
-    if not metrics.get("mean_energy"):
-        warnings.append("little visible movement detected")
-        score -= 30
-    if metrics.get("subject_coverage") is None:
+    else:
+        if fps and fps < 25:
+            warnings.append(f"low frame rate ({fps:.0f} fps) — fast footwork may be missed")
+            score -= 25
+        if duration and duration < 3:
+            warnings.append("very short clip (a few rallies are better)")
+            score -= 15
+        if len(frames) < 8:
+            warnings.append("few frames sampled")
+            score -= 10
+        if not metrics.get("mean_energy"):
+            warnings.append("little visible movement detected")
+            score -= 30
+
+    if metrics.get("subject_coverage") is None and not still:
         warnings.append("could not isolate the player from the background")
         score -= 20
 

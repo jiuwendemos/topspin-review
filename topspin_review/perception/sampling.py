@@ -18,6 +18,19 @@ from PIL import Image
 from topspin_review import config
 from topspin_review.storage import cache
 
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"}
+
+
+def is_image(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in IMAGE_EXTS
+
+
+def load_image(path: str | Path) -> tuple[dict, list[Image.Image], list[float]]:
+    """Return ``(meta, [image], [0.0])`` for a single still picture."""
+    img = Image.open(str(path)).convert("RGB")
+    meta = {"fps": 0, "duration": 0, "size": img.size}
+    return meta, [img], [0.0]
+
 
 def _scaled_reader(path: str, width: int = 160, height: int = 90):
     """Reader that decodes frames downscaled (cheap probing for long clips)."""

@@ -13,7 +13,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from topspin_review import config, reporting
+from topspin_review import config, observability, reporting
 from topspin_review.analysis import prompts, vision
 from topspin_review.analysis import rails as rails_mod
 from topspin_review.analysis import tools as report_tools
@@ -163,8 +163,9 @@ async def analyze(
     )
 
     report_rails = rails_mod.build_rails() if config.rails_enabled() else []
+    text_usage = observability.UsageCollector()
     agent = create_deep_agent(
-        model=config.make_model(),
+        model=observability.attach(config.make_model(), text_usage),
         system_prompt=AGENTIC_SYSTEM,
         tools=[*AGENTIC_TOOLS, *report_tools.ALL_TOOLS],
         rails=report_rails,
@@ -188,13 +189,21 @@ async def analyze(
     tick(progress, "saving report", 92)
 
     vision_usage = backend.usage_summary() if hasattr(backend, "usage_summary") else {}
+    text = text_usage.summary()
+    usage = {
+        "vision": vision_usage,
+        "text": text,
+        "text_calls": text_usage.records(),
+        "calls": int(vision_usage.get("calls", 0)) + int(text.get("calls", 0)),
+        "total_tokens": int(vision_usage.get("total_tokens", 0)) + int(text.get("total_tokens", 0)),
+    }
     report = store.patch_last_report(
         {
             "metrics": measured,
             "source": str(video_path),
             "frames": len(frames),
             "frame_times": [round(t, 2) for t in timestamps],
-            "usage": {"vision": vision_usage, "text": {"calls": 0, "total_tokens": 0}},
+            "usage": usage,
             "region_box": list(region_box) if region_box else None,
         }
     )

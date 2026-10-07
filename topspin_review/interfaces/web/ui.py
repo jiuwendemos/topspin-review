@@ -8,16 +8,16 @@ Run:
 
 from __future__ import annotations
 
+import json
 import os
-import threading
+import subprocess
+import sys
 import time
 from pathlib import Path
 
 import streamlit as st
 
 from topspin_review import reporting as export
-from topspin_review.analysis.progress import Progress
-from topspin_review.bootstrap import run as run_async
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import evaluate, render
@@ -32,49 +32,56 @@ HANDS = ["right", "left"]
 
 # --------------------------------------------------------------------------- #
 # Background analysis + progress
+#
+# The analysis runs in its own process (see topspin_review.interfaces.worker).
+# In-process runs collided with Streamlit's module handling: openjiuwen's runner
+# spawns subprocesses, and Streamlit's script module caused the spawned child to
+# re-import openjiuwen as a second copy, breaking pickling of message objects.
+# The worker streams progress to a JSON file that we poll here.
 # --------------------------------------------------------------------------- #
-def _warm() -> None:
+def _start_worker(target: Path, *, agentic: bool, box) -> None:
+    progress_file = runtime.DATA_DIR / f"_progress_{target.stem}.json"
     try:
-        from topspin_review.analysis import agentic, pipeline  # noqa: F401
-    except Exception:
+        progress_file.unlink()
+    except OSError:
         pass
-
-
-def _run_job(video: str, box, agentic: bool, prog: Progress, stem: str) -> None:
-    prog.update("starting", 1)
-    from topspin_review.analysis import pipeline
-
-    run = pipeline.analyze
+    cmd = [sys.executable, "-m", "topspin_review.interfaces.worker", str(target), "--progress", str(progress_file)]
     if agentic:
-        from topspin_review.analysis import agentic
-
-        run = agentic.analyze
-    try:
-        run_async(run(video, region_box=box, progress=prog))
-    except Exception as exc:  # noqa: BLE001
-        prog.fail(str(exc))
-    else:
-        prog.finish(stem)
+        cmd.append("--agentic")
+    if box:
+        cmd += ["--box", ",".join(str(x) for x in box)]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(runtime.PROJECT_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.Popen(cmd, cwd=str(runtime.PROJECT_ROOT), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    st.session_state["job"] = {
+        "proc": proc,
+        "progress": str(progress_file),
+        "stem": target.stem,
+        "start": time.monotonic(),
+    }
 
 
 def _poll_job() -> None:
     job = st.session_state.get("job")
     if not job:
         return
-    prog: Progress = job["prog"]
-    thread: threading.Thread = job["thread"]
-    snap = prog.snapshot()
-    if thread.is_alive():
-        pct = min(max(float(snap["pct"]), 0.0), 100.0)
+    snap: dict = {}
+    try:
+        snap = json.loads(Path(job["progress"]).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        snap = {}
+    proc: subprocess.Popen = job["proc"]
+    if proc.poll() is None:
+        pct = min(max(float(snap.get("pct") or 0.0), 0.0), 100.0)
         elapsed = time.monotonic() - float(job.get("start", time.monotonic()))
-        st.progress(pct / 100.0, text=f"Analyzing… {snap['stage']} ({int(pct)}%) · {elapsed:.0f}s")
+        st.progress(pct / 100.0, text=f"Analyzing… {snap.get('stage', 'starting')} ({int(pct)}%) · {elapsed:.0f}s")
         time.sleep(0.5)
         st.rerun()
     st.session_state.pop("job", None)
     if snap.get("error"):
         st.session_state["job_error"] = snap["error"]
         st.rerun()
-    st.session_state["latest_stem"] = snap.get("stem")
+    st.session_state["latest_stem"] = snap.get("stem") or job.get("stem")
     st.switch_page(PAGE_OBJS["Result"])
 
 
@@ -94,6 +101,11 @@ def _video_info(path: str) -> dict:
 
 
 def _footage_check(path: str) -> None:
+    from topspin_review.perception import sampling
+
+    if sampling.is_image(path):
+        st.info("Single photo: you'll get feedback on your **posture**, not movement or footwork.")
+        return
     info = _video_info(path)
     if not info:
         return
@@ -127,10 +139,7 @@ def _open(stem: str) -> None:
 
 
 def _prelude() -> None:
-    """Runs at the top of every page: warm imports, show errors, poll the job."""
-    if not st.session_state.get("_warm_started"):
-        st.session_state["_warm_started"] = True
-        threading.Thread(target=_warm, daemon=True).start()
+    """Runs at the top of every page: show errors, poll the job."""
     if st.session_state.get("job_error"):
         st.error(f"Analysis failed: {st.session_state.pop('job_error')}")
     _poll_job()
@@ -152,17 +161,12 @@ _ASK_CSS = """
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 .st-key-askbox [data-testid="stForm"] { border: none; padding: 0; }
-.st-key-askbox [data-testid="stVerticalBlock"] { gap: 0.4rem; }
 </style>
 """
 
 
 def _ask_panel() -> None:
-    """Floating 'ask about this report' panel — always visible, all pages, no jump.
-
-    Fixed to the bottom-right (so it survives scrolling and any selected tab/page)
-    and built from a plain form (no autofocus, so opening a session doesn't jump).
-    """
+    """Floating 'ask about this report' panel — always visible, all pages, no jump."""
     latest = _latest_report()
     if not latest:
         return
@@ -196,13 +200,13 @@ def _ask_panel() -> None:
 def _page_sessions() -> None:
     _prelude()
     st.title("Sessions")
-    st.caption("Every video you've analyzed. Pick one to open, or analyze a new one.")
+    st.caption("Every video or photo you've analyzed. Pick one to open, or analyze a new one.")
 
     reports = store.get_reports()
-    if st.button("Analyze a new video", type="primary"):
+    if st.button("Analyze a new video or photo", type="primary"):
         _go("Analyze")
     if not reports:
-        st.info("No sessions yet. Click **Analyze a new video** to get started.")
+        st.info("No sessions yet. Click **Analyze a new video or photo** to get started.")
         return
 
     latest = reports[-1]
@@ -216,16 +220,29 @@ def _page_sessions() -> None:
         if c2.button("Open", key=f"open_{render.video_name(report)}_{report.get('date', '')}"):
             _open(Path(report.get("source", "")).stem)
 
+    with st.expander("Delete a session"):
+        labels = [f"{render.video_name(r)} · {r.get('date', '')}" for r in reports]
+        pick = st.selectbox("Session", labels, key="delete_pick")
+        confirm = st.checkbox("Yes, delete this session", key="delete_confirm")
+        if st.button("Delete", disabled=not confirm, key="delete_go"):
+            stem = Path(reports[labels.index(pick)].get("source", "")).stem
+            store.delete_report(stem)
+            if st.session_state.get("latest_stem") == stem:
+                st.session_state["latest_stem"] = None
+            st.rerun()
+
 
 # --------------------------------------------------------------------------- #
 # Page: Analyze
 # --------------------------------------------------------------------------- #
 def _page_analyze() -> None:
     _prelude()
-    st.title("Analyze a session")
-    st.caption("A few rallies from the side, full body, is ideal.")
+    st.title("Analyze a video or photo")
+    st.caption("A few rallies from the side (full body) gives the most; a single photo gives posture feedback.")
 
-    uploaded = st.file_uploader("Choose a video", type=["mp4", "mov", "avi", "mkv"])
+    uploaded = st.file_uploader(
+        "Choose a video or a single photo", type=["mp4", "mov", "avi", "mkv", "png", "jpg", "jpeg", "bmp", "webp"]
+    )
     use_sample = st.checkbox("…or use the built-in sample clip")
 
     target: Path | None = None
@@ -255,7 +272,7 @@ def _page_analyze() -> None:
 
     if st.button("Analyze", type="primary", disabled="job" in st.session_state):
         if target is None:
-            st.warning("Choose a video (or tick the sample clip).")
+            st.warning("Choose a video or photo (or tick the sample clip).")
         else:
             if uploaded is not None:
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -263,20 +280,11 @@ def _page_analyze() -> None:
             if not target.exists():
                 st.error(f"File not found: {target}")
             else:
-                prog = Progress()
-                worker = threading.Thread(
-                    target=_run_job,
-                    args=(
-                        str(target),
-                        st.session_state.get("_box"),
-                        bool(st.session_state.get("_agentic")),
-                        prog,
-                        target.stem,
-                    ),
-                    daemon=True,
+                _start_worker(
+                    target,
+                    agentic=bool(st.session_state.get("_agentic")),
+                    box=st.session_state.get("_box"),
                 )
-                worker.start()
-                st.session_state["job"] = {"thread": worker, "prog": prog, "start": time.monotonic()}
                 st.rerun()
 
 
@@ -308,7 +316,7 @@ def _page_result() -> None:
     latest = _latest_report()
     if not latest:
         st.info("No report yet.")
-        if st.button("Analyze a session", type="primary"):
+        if st.button("Analyze a video or photo", type="primary"):
             _go("Analyze")
         return
 
@@ -326,12 +334,15 @@ def _page_result() -> None:
         src = latest.get("source")
         seek = float(st.session_state.get("seek", 0.0) or 0.0)
         if src and Path(src).exists():
-            try:
-                st.video(src, start_time=int(round(seek)))
-            except TypeError:
-                st.video(src)
+            if src.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".webp")):
+                st.image(src)
+            else:
+                try:
+                    st.video(src, start_time=int(round(seek)))
+                except TypeError:
+                    st.video(src)
         else:
-            st.caption("(video not found)")
+            st.caption("(media not found)")
 
         strengths = latest.get("strengths") or []
         if strengths:
@@ -371,37 +382,33 @@ def _page_result() -> None:
     with tab_movement:
         metrics = latest.get("metrics") or {}
         artifacts = latest.get("artifacts") or {}
-        if not metrics:
-            st.info("No movement data.")
+        if not metrics or not (metrics.get("activity")):
+            st.info("No movement data (single-image inputs have none).")
         else:
-            activity = metrics.get("activity") or []
-            if activity:
-                import pandas as pd
+            import pandas as pd
 
-                df = pd.DataFrame(
-                    {"movement": [s["energy"] for s in activity]},
-                    index=[round(s["t"], 2) for s in activity],
-                )
-                df.index.name = "seconds"
-                st.line_chart(df, y_label="movement")
-                st.caption(
-                    "How much the picture changed at each moment: a spike is a step or a swing, "
-                    "a flat stretch is little movement."
-                )
-                if metrics.get("peak_motion_time") is not None:
-                    st.caption(f"Biggest movement around t={metrics['peak_motion_time']}s.")
-            mpath = artifacts.get("motion")
-            if mpath and Path(mpath).exists():
-                st.image(mpath, caption="Red = where you moved most during the clip.")
-            with st.expander("Frames we looked at"):
-                fpath = artifacts.get("frames")
-                if fpath and Path(fpath).exists():
-                    st.image(fpath)
-                ppath = artifacts.get("pose")
-                if ppath and Path(ppath).exists():
-                    st.image(ppath, caption="Body pose overlay")
-                if not fpath and not ppath:
-                    st.caption("Not available.")
+            df = pd.DataFrame(
+                {"movement": [s["energy"] for s in metrics["activity"]]},
+                index=[round(s["t"], 2) for s in metrics["activity"]],
+            )
+            df.index.name = "seconds"
+            st.line_chart(df, y_label="movement")
+            st.caption(
+                "How much the picture changed at each moment: a spike is a step or a swing, "
+                "a flat stretch is little movement."
+            )
+            if metrics.get("peak_motion_time") is not None:
+                st.caption(f"Biggest movement around t={metrics['peak_motion_time']}s.")
+        mpath = artifacts.get("motion")
+        if mpath and Path(mpath).exists():
+            st.image(mpath, caption="Red = where you moved most during the clip.")
+        with st.expander("Frames we looked at"):
+            fpath = artifacts.get("frames")
+            if fpath and Path(fpath).exists():
+                st.image(fpath)
+            ppath = artifacts.get("pose")
+            if ppath and Path(ppath).exists():
+                st.image(ppath, caption="Body pose overlay")
 
     with tab_details:
         with st.expander("Keep in mind", expanded=True):
@@ -411,7 +418,41 @@ def _page_result() -> None:
         st.write(f"Report confidence score: {quality['score']}/100")
         usage = latest.get("usage") or {}
         if usage:
-            st.caption(f"Model usage: {usage.get('calls', 0)} calls · {usage.get('total_tokens', 0)} tokens")
+            text_u = usage.get("text") or {}
+            vision_u = usage.get("vision") or {}
+            model_secs = float(text_u.get("seconds", 0) or 0) + float(vision_u.get("seconds", 0) or 0)
+            st.caption(
+                f"Model usage: {usage.get('calls', 0)} calls · {usage.get('total_tokens', 0)} tokens · "
+                f"{model_secs:.0f}s inside model calls "
+                f"(text {float(text_u.get('seconds', 0) or 0):.0f}s / vision {float(vision_u.get('seconds', 0) or 0):.0f}s)"
+            )
+        timings = latest.get("timings") or []
+        if timings:
+            import pandas as pd
+
+            calls_detail = (usage or {}).get("text_calls") or []
+            agent_stages = ("agent writing report", "agent: analyzing")
+            rows: list[dict] = []
+            for entry in timings:
+                stage = entry.get("stage", "")
+                secs = float(entry.get("seconds", 0) or 0)
+                rows.append({"what": stage, "seconds": secs})
+                if stage in agent_stages and calls_detail:
+                    model_secs = 0.0
+                    for i, call in enumerate(calls_detail, start=1):
+                        cs = float(call.get("seconds", 0) or 0)
+                        model_secs += cs
+                        tokens = int(call.get("total_tokens", 0) or 0)
+                        rows.append({"what": f"    ↳ model call {i} ({tokens} tokens)", "seconds": cs})
+                    rows.append(
+                        {
+                            "what": "    ↳ agent overhead (tool calls, prompt building)",
+                            "seconds": max(0.0, secs - model_secs),
+                        }
+                    )
+            st.markdown("**Where the time went**")
+            st.caption("Every step in order; the report agent's model calls are nested under it.")
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
         stem = Path(latest.get("source", "report")).stem
         st.download_button(
             "Download report (Markdown)", export.to_markdown(latest), file_name=f"{stem}_report.md", mime="text/markdown"
@@ -420,7 +461,8 @@ def _page_result() -> None:
             "Download report (HTML)", export.to_html(latest), file_name=f"{stem}_report.html", mime="text/html"
         )
 
-
+    # Floating ask panel: only on the Result page, but visible across its tabs.
+    _ask_panel()
 
 
 # --------------------------------------------------------------------------- #
@@ -431,8 +473,8 @@ def _page_practice() -> None:
     st.title("Practice")
     latest = _latest_report()
     if not latest:
-        st.info("Analyze a session first, then your drills will show up here.")
-        if st.button("Analyze a session", type="primary"):
+        st.info("Analyze a video or photo first, then your drills will show up here.")
+        if st.button("Analyze a video or photo", type="primary"):
             _go("Analyze")
         return
 
@@ -493,9 +535,15 @@ def _page_you() -> None:
     st.title("You")
     profile = store.get_profile()
     st.markdown("### Your profile")
-    sport = st.radio("Sport", SPORTS, index=SPORTS.index(profile["sport"]) if profile.get("sport") in SPORTS else 0, horizontal=True)
-    level = st.radio("Level", LEVELS, index=LEVELS.index(profile["level"]) if profile.get("level") in LEVELS else 1, horizontal=True)
-    hand = st.radio("Dominant hand", HANDS, index=HANDS.index(profile["dominant_hand"]) if profile.get("dominant_hand") in HANDS else 0, horizontal=True)
+    sport = st.radio(
+        "Sport", SPORTS, index=SPORTS.index(profile["sport"]) if profile.get("sport") in SPORTS else 0, horizontal=True
+    )
+    level = st.radio(
+        "Level", LEVELS, index=LEVELS.index(profile["level"]) if profile.get("level") in LEVELS else 1, horizontal=True
+    )
+    hand = st.radio(
+        "Dominant hand", HANDS, index=HANDS.index(profile["dominant_hand"]) if profile.get("dominant_hand") in HANDS else 0, horizontal=True
+    )
     goal = st.text_input("What you want to improve", value=profile.get("goal", "improve"))
     if st.button("Save profile", type="primary"):
         store.set_profile({"sport": sport, "level": level, "dominant_hand": hand, "goal": goal})
@@ -527,6 +575,3 @@ PAGE_OBJS.update(
 
 _nav = st.navigation([PAGE_OBJS[k] for k in ("Sessions", "Analyze", "Practice", "Progress", "You", "Result")])
 _nav.run()
-
-# App-level, outside the pages: the floating ask panel shows on every page/tab.
-_ask_panel()

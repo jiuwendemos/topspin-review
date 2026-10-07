@@ -2,12 +2,14 @@
 
 The analysis updates a :class:`Progress` from the worker thread; a UI (e.g. the
 Streamlit app) polls :meth:`Progress.snapshot` from the main thread and renders a
-progress bar/stage. ``tick`` is a no-op when no reporter is attached.
+progress bar/stage. It also records how long each stage took. ``tick`` is a no-op
+when no reporter is attached.
 """
 
 from __future__ import annotations
 
 import threading
+import time
 
 
 class Progress:
@@ -19,9 +21,15 @@ class Progress:
         self._done = False
         self._error: str | None = None
         self._stem: str | None = None
+        self._start = time.monotonic()
+        self._last = self._start
+        self._timings: list[dict] = []
 
     def update(self, stage: str, pct: float, detail: str = "") -> None:
         with self._lock:
+            now = time.monotonic()
+            self._timings.append({"stage": self._stage, "seconds": round(now - self._last, 2)})
+            self._last = now
             self._stage = stage
             self._pct = float(pct)
             self._detail = detail
@@ -47,6 +55,8 @@ class Progress:
                 "done": self._done,
                 "error": self._error,
                 "stem": self._stem,
+                "elapsed": round(time.monotonic() - self._start, 2),
+                "timings": list(self._timings),
             }
 
 

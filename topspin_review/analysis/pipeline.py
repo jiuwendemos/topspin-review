@@ -17,7 +17,6 @@ from topspin_review.domain import progress as domain_progress
 from topspin_review.domain import report as report_schema
 from topspin_review.perception import ball, imaging, metrics, pose, quality, sampling
 from topspin_review.providers import get_backend
-from topspin_review.reporting import clips as clips_mod
 from topspin_review.storage import runtime, store
 
 _runner_started = False
@@ -129,9 +128,13 @@ async def analyze(
     profile = store.get_profile()
 
     tick(progress, "sampling frames", 8)
-    meta, frames, timestamps = sampling.sample_frames(video_path, config.max_frames(), config.use_cache())
+    is_still = sampling.is_image(video_path)
+    if is_still:
+        meta, frames, timestamps = sampling.load_image(video_path)
+    else:
+        meta, frames, timestamps = sampling.sample_frames(video_path, config.max_frames(), config.use_cache())
     if not frames:
-        raise ValueError("No frames could be extracted from the video.")
+        raise ValueError("No frames could be extracted from the input.")
 
     tick(progress, "measuring motion", 22)
     steps = metrics.activity(frames, timestamps)
@@ -143,13 +146,21 @@ async def analyze(
     artifact_paths = _save_artifacts(video_path, frames, timestamps, measured, region_box)
 
     backend = get_backend()
-    tick(progress, "vision: overview", 38)
-    coarse_out = await vision.coarse(meta, frames, timestamps, measured, profile, backend=backend)
-    windows = _clean_windows(coarse_out.get("attentive_windows"), timestamps, config.max_windows())
-    tick(progress, "vision: zoom", 52)
-    zoom_frames, zoom_times = _zoom_frames(video_path, windows, config.zoom_frames())
-    tick(progress, "vision: detail", 60)
-    fine_out = await vision.fine(frames, timestamps, measured, windows, zoom_frames, zoom_times, profile, backend=backend)
+    if is_still:
+        tick(progress, "vision: reviewing image", 55)
+        coarse_out = {"overall": "", "attentive_windows": [], "limitations": []}
+        windows: list[dict] = []
+        zoom_frames: list = []
+        zoom_times: list[float] = []
+        fine_out = await vision.analyze_still(frames[0], profile, backend=backend)
+    else:
+        tick(progress, "vision: overview", 38)
+        coarse_out = await vision.coarse(meta, frames, timestamps, measured, profile, backend=backend)
+        windows = _clean_windows(coarse_out.get("attentive_windows"), timestamps, config.max_windows())
+        tick(progress, "vision: zoom", 52)
+        zoom_frames, zoom_times = _zoom_frames(video_path, windows, config.zoom_frames())
+        tick(progress, "vision: detail", 60)
+        fine_out = await vision.fine(frames, timestamps, measured, windows, zoom_frames, zoom_times, profile, backend=backend)
     observations = vision.observations_text(coarse_out, fine_out)
 
     all_reports = store.get_reports()
@@ -173,7 +184,7 @@ async def analyze(
             baseline = f"Previous mechanics: {prev_mech}\nNow: {now_mech}\nChange: {deltas}"
     quality_note = "; ".join(clip_quality.get("warnings") or []) or "ok"
 
-    tick(progress, "writing report", 72)
+    tick(progress, "preparing report", 72)
     trace = observability.CallbackTrace()
     trace_on = config.trace_callbacks() and trace.install()
     report_rails = rails_mod.build_rails() if config.rails_enabled() else []
@@ -200,6 +211,7 @@ async def analyze(
         "Save the report with save_report (schema with evidence_times and confidence), "
         "then give me a short summary."
     )
+    tick(progress, "agent writing report", 80)
     result = await Runner.run_agent(agent, {"query": query})
     tick(progress, "saving report", 92)
 
@@ -208,6 +220,7 @@ async def analyze(
     usage = {
         "vision": vision_usage,
         "text": text,
+        "text_calls": text_usage.records(),
         "calls": int(vision_usage.get("calls", 0)) + int(text.get("calls", 0)),
         "total_tokens": int(vision_usage.get("total_tokens", 0)) + int(text.get("total_tokens", 0)),
     }
@@ -239,13 +252,13 @@ async def analyze(
                 pass
 
         clips: dict = {}
-        if config.clips_enabled():
+        if config.clips_enabled() and not is_still:
             clip_times: list[float] = []
             for item in (report.get("issues") or [])[:3]:
                 if isinstance(item, dict):
                     clip_times.extend(item.get("evidence_times") or [])
             try:
-                clips = clips_mod.make_clips(str(video_path), clip_times, Path(video_path).stem)
+                clips = reporting.make_clips(str(video_path), clip_times, Path(video_path).stem)
             except Exception:
                 clips = {}
 
@@ -268,6 +281,15 @@ async def analyze(
 
     tick(progress, "done", 100)
 
+    timings: list = []
+    if progress is not None:
+        try:
+            timings = progress.snapshot().get("timings") or []
+        except Exception:
+            timings = []
+    if report:
+        report = store.patch_last_report({"timings": timings}) or report
+
     return {
         "result": result,
         "report": report or {},
@@ -275,4 +297,5 @@ async def analyze(
         "observations": observations,
         "frames": len(frames),
         "meta": meta,
+        "timings": timings,
     }

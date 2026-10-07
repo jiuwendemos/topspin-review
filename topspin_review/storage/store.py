@@ -7,6 +7,7 @@ identified by the video file name it came from.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -105,6 +106,47 @@ def patch_last_report(patch: dict[str, Any]) -> dict[str, Any] | None:
     report.update(patch)
     _write(path, report)
     return report
+
+
+def delete_report(video_or_stem: str) -> bool:
+    """Delete one session's report and its generated artifacts/exports/cache."""
+    stem = Path(video_or_stem).stem
+    removed = False
+
+    report = DATA_DIR / f"{stem}{REPORT_SUFFIX}"
+    if report.exists():
+        data = _read(report, {})
+        report.unlink()
+        removed = True
+        source = data.get("source") if isinstance(data, dict) else None
+        if source:
+            media = Path(source)
+            if media.parent == DATA_DIR and media.name.startswith("upload_") and media.exists():
+                try:
+                    media.unlink()
+                except Exception:
+                    pass
+
+    for path in runtime.ARTIFACTS_DIR.glob(f"{stem}_*"):
+        try:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink()
+        except Exception:
+            pass
+
+    for path in (DATA_DIR / "exports").glob(f"{stem}_report.*"):
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
+    cache = runtime.CACHE_DIR / stem
+    if cache.exists():
+        shutil.rmtree(cache, ignore_errors=True)
+
+    return removed
 
 
 def reset() -> None:

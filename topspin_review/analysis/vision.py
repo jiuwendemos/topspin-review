@@ -141,6 +141,29 @@ async def fine(
     return parsed
 
 
+async def analyze_still(frame: Image.Image, profile: dict, backend=None) -> dict:
+    """Single-image pass: describe the static posture only."""
+    backend = backend or get_backend()
+    prompt = prompts.STILL_PROMPT.format(
+        sport=profile.get("sport", "table tennis"),
+        level=profile.get("level", "unknown"),
+        hand=profile.get("dominant_hand", "right"),
+        goal=profile.get("goal", "improve"),
+    )
+    content = [
+        {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": imaging.to_data_url(frame, max_width=config.max_width())}},
+    ]
+    text = await backend.complete(
+        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}]
+    )
+    parsed = extract_json(text)
+    parsed.setdefault("observations", text or "")
+    parsed.setdefault("signals", [])
+    parsed.setdefault("limitations", [])
+    return parsed
+
+
 def observations_text(coarse_out: dict, fine_out: dict) -> str:
     """Flatten both passes into one block for the report-writing agent."""
     lines = []

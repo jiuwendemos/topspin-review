@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 _KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
@@ -64,6 +65,9 @@ class UsageCollector:
     def summary(self) -> dict:
         return summarize(self.usages)
 
+    def records(self) -> list[dict]:
+        return [dict(u) for u in self.usages]
+
 
 class CallbackTrace:
     """Capture usage for every model call via ``Runner.callback_framework``.
@@ -106,8 +110,11 @@ def attach(model: Any, collector: UsageCollector) -> Any:
         return model
 
     async def invoke(messages, *args, **kwargs):
+        start = time.monotonic()
         result = await original(messages, *args, **kwargs)
-        collector.add(extract_usage(result))
+        record = extract_usage(result)
+        record["seconds"] = round(time.monotonic() - start, 2)
+        collector.add(record)
         return result
 
     try:

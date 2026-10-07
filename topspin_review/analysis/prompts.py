@@ -92,6 +92,22 @@ def rubric_text(sport: str, language: str = "en") -> str:
     return "\n".join(f"- {c}" for c in criteria)
 
 
+STILL_PROMPT = """This is a single still photo of a {sport} player.
+Player: level {level}, {hand}-handed, working on: {goal}.
+
+Describe objectively what the STATIC posture shows: ready stance, balance, knee bend,
+torso lean, feet position and the racket/paddle position. You CANNOT assess movement,
+footwork timing, spin, ball speed, or exact angles from one still image — say so in
+"limitations".
+
+Return ONLY a JSON object:
+{{
+  "observations": "a few sentences on the static posture",
+  "signals": [{{"signal": "short finding", "evidence_times": [0], "confidence": "low|medium|high"}}],
+  "limitations": ["single still image — motion and footwork cannot be assessed"]
+}}"""
+
+
 VERIFY_PROMPT = """You are checking a coaching report against the evidence.
 
 Issues drafted:
