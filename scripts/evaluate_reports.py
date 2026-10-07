@@ -1,4 +1,4 @@
-"""Score saved reports and check them against ``eval/expected.json``.
+"""Score saved reports and check them against ``tests/eval/expected.json``.
 
     python scripts/evaluate_reports.py
 
@@ -32,7 +32,7 @@ def _themes(report: dict) -> set[str]:
 
 def main() -> int:
     reports = store.get_reports()
-    expected_file = ROOT / "eval" / "expected.json"
+    expected_file = ROOT / "tests" / "eval" / "expected.json"
     expected = {}
     if expected_file.exists():
         expected = json.loads(expected_file.read_text(encoding="utf-8"))

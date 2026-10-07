@@ -37,9 +37,10 @@ video ─▶ sampling (motion-weighted, cached)
 
 ## Boundaries & conventions
 
-- **No import side effects.** `__init__.py` only exposes the shared-package path
-  bootstrap. Logging is configured by `storage.runtime.setup()` from each
-  interface entry point (and before heavy imports).
+- **Logging redirected on import.** `topspin_review/__init__.py` calls
+  `storage.runtime.setup()` so openjiuwen logs always go to `runtime/logs/` and
+  never write a default `./logs/` into the project root. Interface entry points
+  call `setup()` too (idempotent).
 - **Ports & adapters.** `providers/backends.py` implements the vision port; swap
   `VISION_BACKEND=mock` for offline runs.
 - **Single source of paths.** All generated state lives under `runtime/` via

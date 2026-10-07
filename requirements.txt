@@ -17,3 +17,5 @@ uvicorn>=0.29
 mcp>=1.2
 # Tests.
 pytest>=7
+# Lint / format.
+ruff>=0.6

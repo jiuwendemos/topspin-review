@@ -107,9 +107,9 @@ topspin-review/
 │       └── web/ui.py
 ├── tests/
 │   ├── unit/                 # pipeline + architecture tests
-│   └── integration/          # full-pipeline tests (need a model endpoint)
+│   ├── integration/          # full-pipeline tests (need a model endpoint)
+│   └── eval/expected.json    # labeled expectations for quality checks
 ├── scripts/                  # dev tools: make_sample, eval, benchmark, evaluate_reports
-├── eval/expected.json        # labeled expectations for quality checks
 ├── docs/architecture.md
 ├── .github/workflows/ci.yml
 ├── .env
