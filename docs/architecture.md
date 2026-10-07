@@ -36,10 +36,25 @@ topspin_review/
 ├── reporting.py           # Markdown / HTML / PDF export
 ├── domain/                # report, progress, compare, evaluate, render
 ├── perception/            # sampling, metrics, ball, pose, imaging, cvutil
-├── analysis/              # pipeline, report_agent, prompts, vision, tools
+├── analysis/              # pipeline, agentic, report_agent, prompts, vision, retrieval, rails, tools
 ├── storage/               # runtime, cache, json_store, store
 └── interfaces/            # cli, api, service, mcp/, web/
 ```
+
+## openjiuwen integration
+
+- **Model clients** — `config.make_model` / `make_vision_model` (lazy `openjiuwen...Model`).
+- **Agent** — `create_deep_agent` in `analysis/report_agent.py` (fixed pipeline) and
+  `analysis/agentic.py` (model-driven mode with an `inspect_window` tool).
+- **Tools** — `@tool` in `analysis/tools.py` and `interfaces/mcp/tools.py`.
+- **Rails** — `analysis/rails.py`: a `TokenBudgetRail` and the built-in `MemoryRail`
+  (when `EMBED_*` is set).
+- **Runner** — `Runner.start` / `Runner.run_agent` in the pipelines; optional
+  `Runner.callback_framework` usage trace (`observability.CallbackTrace`).
+- **Logging** — `storage/runtime.py` configures openjiuwen logging into `runtime/logs/`.
+
+Everything above is optional at import time (lazy imports), so the deterministic
+parts (perception/domain/storage) run without openjiuwen installed.
 
 ## Data flow
 

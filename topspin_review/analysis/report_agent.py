@@ -8,7 +8,7 @@ from topspin_review.bootstrap import setup
 from topspin_review.storage import runtime
 
 
-def build_agent(model=None):
+def build_agent(model=None, rails=None):
     from openjiuwen.harness import create_deep_agent
 
     setup()
@@ -17,6 +17,7 @@ def build_agent(model=None):
         model=model or config.make_model(),
         system_prompt=prompts.REPORT_AGENT_SYSTEM,
         tools=tools.ALL_TOOLS,
+        rails=rails or [],
         enable_task_loop=False,
         max_iterations=15,
         workspace=runtime.workspace(),

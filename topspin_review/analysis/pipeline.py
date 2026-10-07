@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from topspin_review import config, observability, reporting
-from topspin_review.analysis import prompts, report_agent, vision
+from topspin_review.analysis import prompts, rails as rails_mod, report_agent, retrieval, vision
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress
 from topspin_review.perception import ball, imaging, metrics, pose, sampling
@@ -136,21 +136,34 @@ async def analyze(
     fine_out = await vision.fine(frames, timestamps, measured, windows, zoom_frames, zoom_times, profile, backend=backend)
     observations = vision.observations_text(coarse_out, fine_out)
 
-    prev_progress = progress.summarize(store.get_reports())
+    all_reports = store.get_reports()
+    prev_progress = progress.summarize(all_reports)
     progress_note = prev_progress.get("text", "") if prev_progress else "No previous report."
     repeated = ", ".join(prev_progress.get("repeated_themes", [])) if prev_progress else ""
 
+    related = ""
+    if config.retrieval_enabled():
+        related = retrieval.context_text(all_reports, f"{profile.get('goal', '')} {observations}")
+
     window_label = ", ".join(f"{w['start']}-{w['end']}s" for w in windows) or "none"
 
+    trace = observability.CallbackTrace()
+    trace_on = config.trace_callbacks() and trace.install()
+    report_rails = rails_mod.build_rails() if config.rails_enabled() else []
+
     text_usage = observability.UsageCollector()
-    agent = report_agent.build_agent(model=observability.attach(config.make_model(), text_usage))
+    agent = report_agent.build_agent(
+        model=observability.attach(config.make_model(), text_usage), rails=report_rails
+    )
     query = (
         f"Today is {date.today().isoformat()}. "
         f"Write my coaching report for a {profile.get('sport', 'table tennis')} session.\n"
         f"Player: level {profile.get('level', 'unknown')}, "
         f"{profile.get('dominant_hand', 'right')}-handed, working on: "
         f"{profile.get('goal', 'improve')}.\n\n"
-        f"History: {progress_note}" + (f" Recurring themes: {repeated}." if repeated else "") + "\n\n"
+        f"History: {progress_note}" + (f" Recurring themes: {repeated}." if repeated else "") + "\n"
+        + (f"Related past sessions:\n{related}\n" if related else "")
+        + "\n"
         f"Analysis ({len(frames)} sampled frames, windows examined: {window_label}):\n"
         f"{observations}\n\n"
         f"Measured motion/mechanics:\n{prompts.metrics_text(measured)}\n\n"
@@ -167,6 +180,8 @@ async def analyze(
         "calls": int(vision_usage.get("calls", 0)) + int(text.get("calls", 0)),
         "total_tokens": int(vision_usage.get("total_tokens", 0)) + int(text.get("total_tokens", 0)),
     }
+    if trace_on:
+        usage["callback_trace"] = trace.summary()
 
     report = store.patch_last_report(
         {

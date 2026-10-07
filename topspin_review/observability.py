@@ -65,6 +65,39 @@ class UsageCollector:
         return summarize(self.usages)
 
 
+class CallbackTrace:
+    """Capture usage for every model call via ``Runner.callback_framework``.
+
+    This is a lighter-weight, framework-native alternative/supplement to
+    :func:`attach`; it observes the global ``LLM_INVOKE_OUTPUT`` event so both
+    vision and text calls are covered without wrapping each model.
+    """
+
+    def __init__(self) -> None:
+        self.usages: list[dict] = []
+
+    def install(self) -> bool:
+        """Register the observer. Returns ``False`` if unavailable (never raises)."""
+        try:
+            from openjiuwen.core.runner import Runner
+            from openjiuwen.core.runner.callback.events import LLMCallEvents
+
+            async def _observe(*args: Any, **kwargs: Any) -> None:
+                for obj in list(args) + list(kwargs.values()):
+                    record = extract_usage(obj)
+                    if record:
+                        self.usages.append(record)
+                        return
+
+            Runner.callback_framework.on(LLMCallEvents.LLM_INVOKE_OUTPUT)(_observe)
+            return True
+        except Exception:
+            return False
+
+    def summary(self) -> dict:
+        return summarize(self.usages)
+
+
 def attach(model: Any, collector: UsageCollector) -> Any:
     """Wrap ``model.invoke`` to record token usage (best-effort, never fatal)."""
     try:

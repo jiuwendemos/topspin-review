@@ -81,11 +81,18 @@ def _parse_box(text: str | None) -> tuple[float, float, float, float] | None:
     return (parts[0], parts[1], parts[2], parts[3])
 
 
-def cmd_analyze(path: str, box: str | None = None) -> int:
+def cmd_analyze(path: str, box: str | None = None, agentic: bool = False) -> int:
     from topspin_review.analysis import pipeline
 
+    run = pipeline.analyze
+    use_agentic = agentic or config.agentic_mode()
+    if use_agentic:
+        from topspin_review.analysis import agentic
+
+        run = agentic.analyze
+
     try:
-        outcome = asyncio.run(pipeline.analyze(path, region_box=_parse_box(box)))
+        outcome = asyncio.run(run(path, region_box=_parse_box(box)))
     except (config.ConfigError, FileNotFoundError) as exc:
         print(f"error: {exc}")
         return 2
@@ -169,6 +176,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="normalized player region 'left,top,right,bottom' (0..1) to ignore other people",
     )
+    p_analyze.add_argument(
+        "--agentic",
+        action="store_true",
+        help="let the model drive analysis by inspecting windows itself (slower)",
+    )
     sub.add_parser("history", help="show recent reports")
     p_export = sub.add_parser("export", help="export the latest (or a specific) report")
     p_export.add_argument("video", nargs="?", default=None, help="video file name")
@@ -182,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "profile":
         return cmd_profile()
     if args.command == "analyze":
-        return cmd_analyze(args.path, getattr(args, "box", None))
+        return cmd_analyze(args.path, getattr(args, "box", None), getattr(args, "agentic", False))
     if args.command == "history":
         return cmd_history()
     if args.command == "export":

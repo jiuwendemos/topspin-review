@@ -97,7 +97,7 @@ topspin-review/
 │   ├── reporting.py          # Markdown / HTML / PDF export
 │   ├── domain/               # pure: report, progress, compare, evaluate, render
 │   ├── perception/           # sampling, metrics, ball, pose, imaging, cvutil
-│   ├── analysis/             # pipeline, report_agent, prompts, vision, tools
+│   ├── analysis/             # pipeline, agentic, report_agent, prompts, vision, retrieval, rails, tools
 │   ├── storage/              # runtime, cache, json_store, store
 │   └── interfaces/           # cli, api, service, mcp/, web/
 ├── tests/
@@ -179,6 +179,11 @@ result = analyze_video_sync("runtime/data/session.mp4")
 - `VISION_MAX_SECONDS` (default 0 = whole clip) — cap analysis for long videos.
 - `VISION_PROBE_BUDGET` (default 64) — frames read while locating motion-heavy windows.
 - `LLM_RETRIES` (default 2) — retries per vision call (timeout uses `LLM_TIMEOUT`).
+- `AGENTIC_MODE` (default false) — let the model drive analysis (`analyze --agentic`).
+- `RETRIEVAL` (default true) — add lexically-retrieved past sessions to the report context.
+- `RAILS` (default true) — enable openjiuwen rails (token-budget guard; `MemoryRail` when `EMBED_*` set).
+- `TRACE_CALLBACKS` (default false) — capture usage for all calls via `Runner.callback_framework`.
+- `TOKEN_BUDGET` (default 0 = unlimited) — abort a run past this many tokens.
 
 ## Notes
 

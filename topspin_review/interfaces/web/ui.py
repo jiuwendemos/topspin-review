@@ -41,6 +41,8 @@ with st.sidebar:
     uploaded = st.file_uploader("Upload a clip", type=["mp4", "mov", "avi", "mkv"])
     use_sample = st.checkbox("Use runtime/data/sample.mp4")
 
+    agentic = st.checkbox("Agentic (model-driven analysis)")
+
     st.caption("Optional: restrict analysis to the player (normalized 0..1)")
     use_box = st.checkbox("Use player region")
     box = None
@@ -68,8 +70,14 @@ with st.sidebar:
             with st.spinner("Measuring motion and analyzing frames…"):
                 from topspin_review.analysis import pipeline
 
+                run = pipeline.analyze
+                if agentic:
+                    from topspin_review.analysis import agentic
+
+                    run = agentic.analyze
+
                 try:
-                    asyncio.run(pipeline.analyze(str(target), region_box=box))
+                    asyncio.run(run(str(target), region_box=box))
                     st.success("Done.")
                     st.rerun()
                 except (config.ConfigError, FileNotFoundError) as exc:

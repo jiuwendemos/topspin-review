@@ -146,6 +146,17 @@ def test_export_markdown_and_html():
     assert export.to_html(rep).lstrip().startswith("<!doctype html")
 
 
+def test_retrieval_context():
+    from topspin_review.analysis import retrieval
+
+    reports = [
+        {"source": "a.mp4", "issues": [{"issue": "poor footwork and split step"}], "focus": "footwork"},
+        {"source": "b.mp4", "issues": [{"issue": "late backswing"}], "focus": "preparation"},
+    ]
+    ctx = retrieval.context_text(reports, "footwork split step", k=2)
+    assert "a.mp4" in ctx and "b.mp4" not in ctx
+
+
 def test_extract_json_variants():
     assert vision.extract_json('```json\n{"a": 1}\n```') == {"a": 1}
     assert vision.extract_json("garbage") == {}

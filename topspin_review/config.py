@@ -97,6 +97,45 @@ def llm_timeout() -> float:
     return float(os.getenv("LLM_TIMEOUT", "180"))
 
 
+def agentic_mode() -> bool:
+    """Run the model-driven analysis pipeline instead of the fixed one."""
+    return _bool("AGENTIC_MODE", "false")
+
+
+def retrieval_enabled() -> bool:
+    """Add lexically-retrieved past sessions to the report context."""
+    return _bool("RETRIEVAL", "true")
+
+
+def rails_enabled() -> bool:
+    return _bool("RAILS", "true")
+
+
+def trace_callbacks() -> bool:
+    """Use Runner.callback_framework to capture usage across all model calls."""
+    return _bool("TRACE_CALLBACKS", "false")
+
+
+def token_budget() -> int:
+    """Abort the run once cumulative tokens exceed this (0 = unlimited)."""
+    return int(os.getenv("TOKEN_BUDGET", "0"))
+
+
+def has_embedding() -> bool:
+    return bool(os.getenv("EMBED_API_KEY")) and bool(os.getenv("EMBED_API_BASE"))
+
+
+def embedding_config():
+    """Embedding config for the memory rail (only when ``EMBED_*`` is set)."""
+    from openjiuwen.core.foundation.store.base_embedding import EmbeddingConfig
+
+    return EmbeddingConfig(
+        model_name=os.getenv("EMBED_MODEL_NAME", "text-embedding-v3"),
+        base_url=os.getenv("EMBED_API_BASE", ""),
+        api_key=os.getenv("EMBED_API_KEY", ""),
+    )
+
+
 def validate() -> None:
     missing = [k for k in ("API_KEY", "API_BASE", "MODEL_NAME") if not os.getenv(k)]
     if missing:
