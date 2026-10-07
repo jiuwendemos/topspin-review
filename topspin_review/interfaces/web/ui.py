@@ -1,4 +1,6 @@
-"""Streamlit UI for Topspin Review.
+"""Streamlit UI for Topspin Review — a video-first coaching journey.
+
+Pages: Home -> Analyze -> Result -> Practice -> Progress -> You.
 
 Run:
     streamlit run topspin_review/interfaces/web/ui.py
@@ -23,9 +25,16 @@ from topspin_review.storage import runtime, store
 
 setup()
 
+SPORTS = ["table tennis", "tennis", "badminton", "squash", "padel"]
+LEVELS = ["beginner", "intermediate", "advanced"]
+HANDS = ["right", "left"]
+PAGES = ["Home", "Analyze", "Practice", "Progress", "You"]
 
+
+# --------------------------------------------------------------------------- #
+# Background analysis + progress
+# --------------------------------------------------------------------------- #
 def _warm() -> None:
-    """Import the heavy analysis stack off the render thread (once per session)."""
     try:
         from topspin_review.analysis import agentic, pipeline  # noqa: F401
     except Exception:
@@ -33,7 +42,6 @@ def _warm() -> None:
 
 
 def _run_job(video: str, box, agentic: bool, prog: Progress, stem: str) -> None:
-    """Worker: run the pipeline in its own thread, reporting progress."""
     prog.update("starting", 1)
     from topspin_review.analysis import pipeline
 
@@ -51,7 +59,6 @@ def _run_job(video: str, box, agentic: bool, prog: Progress, stem: str) -> None:
 
 
 def _poll_job() -> None:
-    """Render live progress and rerun until the background job finishes."""
     job = st.session_state.get("job")
     if not job:
         return
@@ -66,254 +73,394 @@ def _poll_job() -> None:
         st.rerun()
     st.session_state.pop("job", None)
     if snap.get("error"):
-        # Persist across the rerun below (an st.error shown now would be wiped).
         st.session_state["job_error"] = snap["error"]
     else:
         st.session_state["latest_stem"] = snap.get("stem")
-        st.session_state["job_done"] = snap.get("stem")
+        st.session_state["page"] = "Result"
     st.rerun()
 
-st.set_page_config(page_title="Topspin Review", page_icon="🏓", layout="wide")
 
-# Pre-import the analysis stack in the background so the first Analyze click is
-# not stalled by a multi-second import under the GIL.
+# --------------------------------------------------------------------------- #
+# Small helpers
+# --------------------------------------------------------------------------- #
+def _video_info(path: str) -> dict:
+    try:
+        import imageio
+
+        reader = imageio.get_reader(str(path), format="ffmpeg")
+        meta = dict(reader.get_meta_data())
+        reader.close()
+        return {"fps": meta.get("fps"), "duration": meta.get("duration"), "size": meta.get("size")}
+    except Exception:
+        return {}
+
+
+def _footage_check(path: str) -> None:
+    info = _video_info(path)
+    if not info:
+        return
+    size = info.get("size") or (0, 0)
+    fps = info.get("fps") or 0
+    duration = info.get("duration") or 0
+    notes = []
+    if duration and duration < 3:
+        notes.append("very short (a few rallies are better)")
+    if fps and fps < 25:
+        notes.append(f"low frame rate ({fps:.0f} fps — 60+ shows footwork better)")
+    if size and size[1] and size[1] < 480:
+        notes.append("low resolution")
+    if notes:
+        st.warning("Footage tips: " + "; ".join(notes) + ". Side-on, full-body works best.")
+    else:
+        st.success("Looks good — analyzing this should give useful feedback.")
+
+
+def _open(stem: str) -> None:
+    st.session_state["latest_stem"] = stem
+    st.session_state["seek"] = 0.0
+    st.session_state["page"] = "Result"
+    st.rerun()
+
+
+def _go(page: str) -> None:
+    st.session_state["page"] = page
+    st.rerun()
+
+
+# --------------------------------------------------------------------------- #
+# Page: Home
+# --------------------------------------------------------------------------- #
+def _page_home() -> None:
+    st.title("🏓 Topspin Review")
+    st.caption("Upload a video of your game. Get one clear thing to work on, then practice it.")
+
+    reports = store.get_reports()
+    if not reports:
+        st.info(
+            "**Start here**\n\n1. Go to **Analyze**, choose a video of a few rallies.\n"
+            "2. Get your feedback in about a minute.\n3. Follow your drills in **Practice**."
+        )
+        if st.button("Analyze a session", type="primary"):
+            _go("Analyze")
+        return
+
+    latest = reports[-1]
+    st.markdown("### Your focus right now")
+    st.success(latest.get("focus") or "Keep up the consistency work.")
+    if latest.get("progress"):
+        st.caption(latest["progress"])
+
+    col_a, col_b = st.columns([1, 1])
+    if col_a.button("Analyze a new session", type="primary", use_container_width=True):
+        _go("Analyze")
+    if col_b.button("Open last report", use_container_width=True):
+        _open(Path(latest.get("source", "")).stem)
+
+    st.markdown("### Recent sessions")
+    names = [render.video_name(r) for r in reports]
+    for report in reversed(reports[-6:]):
+        c1, c2 = st.columns([4, 1])
+        c1.markdown(f"**{render.video_name(report)}**  \n{report.get('date', '')} — {report.get('focus', '')}")
+        if c2.button("View", key=f"view_{render.video_name(report)}"):
+            _open(Path(report.get("source", "")).stem)
+
+
+# --------------------------------------------------------------------------- #
+# Page: Analyze
+# --------------------------------------------------------------------------- #
+def _page_analyze() -> None:
+    st.title("Analyze a session")
+    st.caption("A few rallies from the side, full body, is ideal.")
+
+    uploaded = st.file_uploader("Choose a video", type=["mp4", "mov", "avi", "mkv"])
+    use_sample = st.checkbox("…or use the built-in sample clip")
+
+    target: Path | None = None
+    if uploaded is not None:
+        target = runtime.DATA_DIR / f"upload_{uploaded.name}"
+    elif use_sample:
+        target = runtime.DATA_DIR / "sample.mp4"
+    if target is not None:
+        _footage_check(str(target))
+
+    with st.expander("Advanced"):
+        st.checkbox("Let the AI decide what to review (slower)", key="_agentic")
+        st.slider("How much of the video to study", 4, 30, value=12, key="_frames")
+        st.number_input("Only study the first N seconds (0 = all)", 0, 3600, value=0, key="_seconds")
+        if st.checkbox("Only look at me (ignore other people)", key="_use_box"):
+            st.session_state["_box"] = (
+                st.slider("left", 0.0, 1.0, 0.0, 0.05, key="_left"),
+                st.slider("top", 0.0, 1.0, 0.0, 0.05, key="_top"),
+                st.slider("right", 0.0, 1.0, 1.0, 0.05, key="_right"),
+                st.slider("bottom", 0.0, 1.0, 1.0, 0.05, key="_bottom"),
+            )
+        else:
+            st.session_state["_box"] = None
+
+    os.environ["VISION_MAX_FRAMES"] = str(int(st.session_state.get("_frames", 12)))
+    os.environ["VISION_MAX_SECONDS"] = str(int(st.session_state.get("_seconds", 0)))
+
+    if st.button("Analyze", type="primary", disabled="job" in st.session_state):
+        if target is None:
+            st.warning("Choose a video (or tick the sample clip).")
+        else:
+            if uploaded is not None:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(uploaded.getbuffer())
+            if not target.exists():
+                st.error(f"File not found: {target}")
+            else:
+                prog = Progress()
+                worker = threading.Thread(
+                    target=_run_job,
+                    args=(
+                        str(target),
+                        st.session_state.get("_box"),
+                        bool(st.session_state.get("_agentic")),
+                        prog,
+                        target.stem,
+                    ),
+                    daemon=True,
+                )
+                worker.start()
+                st.session_state["job"] = {"thread": worker, "prog": prog, "start": time.monotonic()}
+                st.rerun()
+
+
+# --------------------------------------------------------------------------- #
+# Page: Result
+# --------------------------------------------------------------------------- #
+def _moment_row(parent, idx: int, issue: dict) -> None:
+    parent.markdown(f"- {issue.get('issue', '')}")
+    times = issue.get("evidence_times") or []
+    if times:
+        cols = parent.columns(len(times))
+        for c, t in zip(cols, times):
+            if c.button(f"▶ {t}s", key=f"seek_{idx}_{t}"):
+                st.session_state.seek = float(t)
+                st.rerun()
+
+
+def _page_result() -> None:
+    reports = store.get_reports()
+    latest = store.find_report(st.session_state.get("latest_stem", "")) if st.session_state.get("latest_stem") else None
+    if latest is None:
+        getter = getattr(store, "latest_report", None)
+        latest = (getter() if callable(getter) else None) or (reports[-1] if reports else {})
+    if not latest:
+        st.info("No report yet.")
+        if st.button("Analyze a session", type="primary"):
+            _go("Analyze")
+        return
+
+    st.title(render.video_name(latest))
+    st.caption(f"{latest.get('sport', '')} · {latest.get('date', '')}")
+
+    src = latest.get("source")
+    seek = float(st.session_state.get("seek", 0.0) or 0.0)
+    if src and Path(src).exists():
+        try:
+            st.video(src, start_time=int(round(seek)))
+        except TypeError:
+            st.video(src)
+        if seek:
+            st.caption(f"Showing around {seek:.1f}s.")
+    else:
+        st.caption("(video not found)")
+
+    if latest.get("focus"):
+        st.success(f"### Focus next session\n{latest['focus']}")
+    if latest.get("summary"):
+        st.write(latest["summary"])
+
+    strengths = latest.get("strengths") or []
+    if strengths:
+        st.markdown("### ✅ What's working")
+        for item in strengths:
+            st.markdown(f"- {item}")
+
+    issues = latest.get("issues") or []
+    if issues:
+        st.markdown("### 🎯 What to fix")
+        st.caption("Tap a time to jump the video to that moment.")
+        for idx, item in enumerate(issues):
+            if isinstance(item, dict):
+                _moment_row(st, idx, item)
+            else:
+                st.markdown(f"- {item}")
+
+    drills = latest.get("drills") or []
+    if drills:
+        st.markdown("### 🏋️ Drills to practice")
+        for item in drills:
+            st.markdown(f"- {item}")
+        if st.button("Add these drills to Practice"):
+            _go("Practice")
+
+    metrics = latest.get("metrics") or {}
+    artifacts = latest.get("artifacts") or {}
+    if metrics:
+        st.markdown("### 👀 Where you moved (and when)")
+        st.caption(
+            "How much the picture changed at each moment. A spike means big movement "
+            "(a step or a swing); a flat stretch means little movement."
+        )
+        activity = metrics.get("activity") or []
+        if activity:
+            import pandas as pd
+
+            df = pd.DataFrame(
+                {"movement": [s["energy"] for s in activity]},
+                index=[round(s["t"], 2) for s in activity],
+            )
+            df.index.name = "seconds"
+            st.line_chart(df, y_label="movement")
+            if metrics.get("peak_motion_time") is not None:
+                st.caption(f"Biggest movement around t={metrics['peak_motion_time']}s.")
+        mpath = artifacts.get("motion")
+        if mpath and Path(mpath).exists():
+            st.image(mpath, caption="Red = where you moved most during the clip.")
+        with st.expander("Frames we looked at"):
+            fpath = artifacts.get("frames")
+            if fpath and Path(fpath).exists():
+                st.image(fpath)
+            ppath = artifacts.get("pose")
+            if ppath and Path(ppath).exists():
+                st.image(ppath, caption="Body pose overlay")
+            if not fpath and not ppath:
+                st.caption("Not available.")
+
+    if latest.get("progress"):
+        st.info(f"Since last time: {latest['progress']}")
+
+    with st.expander("Keep in mind"):
+        for item in latest.get("limitations") or []:
+            st.markdown(f"- {item}")
+
+    with st.expander("Details & download"):
+        quality = evaluate.score(latest)
+        st.write(f"Report confidence score: {quality['score']}/100")
+        usage = latest.get("usage") or {}
+        if usage:
+            st.caption(f"Model usage: {usage.get('calls', 0)} calls · {usage.get('total_tokens', 0)} tokens")
+        stem = Path(latest.get("source", "report")).stem
+        st.download_button("Download report (Markdown)", export.to_markdown(latest), file_name=f"{stem}_report.md", mime="text/markdown")
+        st.download_button("Download report (HTML)", export.to_html(latest), file_name=f"{stem}_report.html", mime="text/html")
+
+
+# --------------------------------------------------------------------------- #
+# Page: Practice
+# --------------------------------------------------------------------------- #
+def _page_practice() -> None:
+    st.title("Practice")
+    latest = store.latest_report() if hasattr(store, "latest_report") else (store.get_reports() or [{}])[-1]
+    if not latest:
+        st.info("Analyze a session first, then your drills will show up here.")
+        if st.button("Analyze a session", type="primary"):
+            _go("Analyze")
+        return
+
+    if latest.get("focus"):
+        st.success(f"**Focus:** {latest['focus']}")
+    drills = latest.get("drills") or []
+    if not drills:
+        st.info("No drills in the latest report.")
+        return
+
+    st.markdown("### This week's drills")
+    done = 0
+    for i, drill in enumerate(drills):
+        key = f"drill_{i}"
+        if st.checkbox(drill, key=key):
+            done += 1
+    st.progress(done / len(drills) if drills else 0.0, text=f"{done}/{len(drills)} drills checked off")
+
+
+# --------------------------------------------------------------------------- #
+# Page: Progress
+# --------------------------------------------------------------------------- #
+def _page_progress() -> None:
+    st.title("Progress")
+    reports = store.get_reports()
+    if len(reports) < 1:
+        st.info("Analyze a few sessions to see your progress.")
+        return
+    latest = reports[-1]
+    trend = latest.get("progress_trend") or {}
+    st.write(trend.get("text", "Not enough history yet."))
+
+    counts = trend.get("issue_counts") or []
+    if counts:
+        st.markdown("### Issues per session (lower is better)")
+        st.line_chart({"issues": counts})
+
+    if len(reports) >= 2:
+        with st.expander("Compare two sessions"):
+            names = [render.video_name(r) for r in reports]
+            left, right = st.columns(2)
+            older = left.selectbox("Earlier", names, index=0)
+            newer = right.selectbox("Later", names, index=len(names) - 1)
+            if st.button("Compare") and older != newer:
+                result = compare_mod.compare(reports[names.index(older)], reports[names.index(newer)])
+                st.markdown(f"**What changed:** {result['text']}")
+                for label, key in (("Improved", "improved"), ("Still an issue", "unchanged"), ("New/regressed", "regressed")):
+                    items = result.get(key) or []
+                    if items:
+                        st.markdown(f"**{label}:** " + ", ".join(items))
+
+
+# --------------------------------------------------------------------------- #
+# Page: You
+# --------------------------------------------------------------------------- #
+def _page_you() -> None:
+    st.title("You")
+    profile = store.get_profile()
+    st.markdown("### Your profile")
+    sport = st.radio("Sport", SPORTS, index=SPORTS.index(profile["sport"]) if profile.get("sport") in SPORTS else 0, horizontal=True)
+    level = st.radio("Level", LEVELS, index=LEVELS.index(profile["level"]) if profile.get("level") in LEVELS else 1, horizontal=True)
+    hand = st.radio("Dominant hand", HANDS, index=HANDS.index(profile["dominant_hand"]) if profile.get("dominant_hand") in HANDS else 0, horizontal=True)
+    goal = st.text_input("What you want to improve", value=profile.get("goal", "improve"))
+    if st.button("Save profile", type="primary"):
+        store.set_profile({"sport": sport, "level": level, "dominant_hand": hand, "goal": goal})
+        st.success("Saved.")
+
+    st.divider()
+    if store.get_reports():
+        if st.button("Clear all reports"):
+            store.reset()
+            st.session_state["latest_stem"] = None
+            st.rerun()
+
+
+# --------------------------------------------------------------------------- #
+# Shell
+# --------------------------------------------------------------------------- #
+st.set_page_config(page_title="Topspin Review", page_icon="🏓", layout="centered")
+
 if not st.session_state.get("_warm_started"):
     st.session_state["_warm_started"] = True
     threading.Thread(target=_warm, daemon=True).start()
 
-if st.session_state.get("job_error"):
-    st.error(f"Analysis failed: {st.session_state.pop('job_error')}")
-if st.session_state.get("job_done"):
-    st.success(f"Done: {st.session_state.pop('job_done')}")
-
-st.title("🏓 Topspin Review")
-st.caption("Analyze a session video — measured motion, footwork, and drills.")
+st.session_state.setdefault("page", "Home")
 
 with st.sidebar:
-    st.header("Profile")
-    profile = store.get_profile()
-    sport = st.text_input("Sport", value=profile.get("sport", "table tennis"))
-    level = st.text_input("Level", value=profile.get("level", "intermediate"))
-    hand = st.text_input("Dominant hand", value=profile.get("dominant_hand", "right"))
-    goal = st.text_input("Goal", value=profile.get("goal", "improve"))
-    if st.button("Save profile"):
-        store.set_profile({"sport": sport, "level": level, "dominant_hand": hand, "goal": goal})
-        st.success("Profile saved.")
+    st.markdown("## 🏓 Topspin Review")
+    for name in PAGES:
+        active = st.session_state.get("page") == name
+        if st.button(name, key=f"nav_{name}", type="primary" if active else "secondary", use_container_width=True):
+            _go(name)
 
-    st.divider()
-    st.subheader("Analyze a video")
-    uploaded = st.file_uploader("Upload a clip", type=["mp4", "mov", "avi", "mkv"])
-    use_sample = st.checkbox("Use runtime/data/sample.mp4")
-
-    agentic = st.checkbox("Agentic (model-driven analysis)")
-
-    with st.expander("Speed settings", expanded=False):
-        max_frames = st.number_input("Frames sampled (fewer = faster)", 4, 30, 12, 1)
-        max_seconds = st.number_input("Limit to first N seconds (0 = whole clip)", 0, 3600, 0, 5)
-    st.caption("Analysis runs the model several times; expect ~1-3 min for a 1080p clip.")
-
-    st.caption("Optional: restrict analysis to the player (normalized 0..1)")
-    use_box = st.checkbox("Use player region")
-    box = None
-    if use_box:
-        left = st.slider("left", 0.0, 1.0, 0.0, 0.05)
-        top = st.slider("top", 0.0, 1.0, 0.0, 0.05)
-        right = st.slider("right", 0.0, 1.0, 1.0, 0.05)
-        bottom = st.slider("bottom", 0.0, 1.0, 1.0, 0.05)
-        box = (left, top, right, bottom)
-
-    if st.button("Analyze", type="primary", disabled="job" in st.session_state):
-        if uploaded is not None:
-            target = runtime.DATA_DIR / f"upload_{uploaded.name}"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(uploaded.getbuffer())
-        elif use_sample:
-            target = runtime.DATA_DIR / "sample.mp4"
-        else:
-            target = None
-        if target is None:
-            st.warning("Upload a clip or tick “Use runtime/data/sample.mp4”.")
-        elif not target.exists():
-            st.error(f"Not found: {target}")
-        else:
-            os.environ["VISION_MAX_FRAMES"] = str(int(max_frames))
-            os.environ["VISION_MAX_SECONDS"] = str(int(max_seconds))
-            prog = Progress()
-            worker = threading.Thread(
-                target=_run_job, args=(str(target), box, agentic, prog, target.stem), daemon=True
-            )
-            worker.start()
-            st.session_state["job"] = {"thread": worker, "prog": prog, "start": time.monotonic()}
-            st.rerun()
-
-    if st.button("Reset reports"):
-        store.reset()
-        st.session_state.pop("seek", None)
-        st.session_state.pop("job", None)
-        st.rerun()
+if st.session_state.get("job_error"):
+    st.error(f"Analysis failed: {st.session_state.pop('job_error')}")
 
 _poll_job()
 
-reports = store.get_reports()
-latest = store.find_report(st.session_state.get("latest_stem", "")) if st.session_state.get("latest_stem") else None
-if latest is None:
-    getter = getattr(store, "latest_report", None)
-    latest = (getter() if callable(getter) else None) or (reports[-1] if reports else {})
-artifacts = latest.get("artifacts") or {}
-metrics = latest.get("metrics") or {}
-
-st.subheader(f"{render.video_name(latest)} — {latest.get('sport', '')} ({latest.get('date', '')})" if latest else "No report yet")
-
-tab_report, tab_motion, tab_progress, tab_compare, tab_history = st.tabs(
-    ["Report", "Motion", "Progress", "Compare", "History"]
-)
-
-with tab_report:
-    if not latest:
-        st.info("No report yet. Analyze a clip from the sidebar.")
-    else:
-        src = latest.get("source")
-        seek = float(st.session_state.get("seek", 0.0) or 0.0)
-        if src and Path(src).exists():
-            # st.video's start_time is whole seconds; round the evidence time.
-            try:
-                st.video(src, start_time=int(round(seek)))
-            except TypeError:
-                st.video(src)
-            if seek:
-                st.caption(f"Seeking to t={seek:.1f}s (video starts near there).")
-        else:
-            st.caption(f"(video not found: {src})")
-
-        if latest.get("summary"):
-            st.write(latest["summary"])
-        for label, key in (("Strengths", "strengths"), ("Drills", "drills")):
-            items = latest.get(key) or []
-            if items:
-                st.markdown(f"**{label}**")
-                for item in items:
-                    st.markdown(f"- {item}")
-
-        issues = latest.get("issues") or []
-        if issues:
-            st.markdown("**Issues** (click a timestamp to jump the video)")
-            for idx, item in enumerate(issues):
-                if isinstance(item, dict):
-                    conf = item.get("confidence") or "?"
-                    st.markdown(f"- {item.get('issue', '')} · <small>confidence {conf}</small>", unsafe_allow_html=True)
-                    times = item.get("evidence_times") or []
-                    if times:
-                        cols = st.columns(len(times))
-                        for c, t in zip(cols, times):
-                            if c.button(f"▶ t={t}s", key=f"seek_{idx}_{t}"):
-                                st.session_state.seek = float(t)
-                                st.rerun()
-                else:
-                    st.markdown(f"- {item}")
-
-        if latest.get("focus"):
-            st.success(f"Focus next session: {latest['focus']}")
-        if latest.get("progress"):
-            st.info(f"Progress vs last time: {latest['progress']}")
-        if latest.get("limitations"):
-            st.caption("Limitations: " + "; ".join(latest["limitations"]))
-
-        quality = evaluate.score(latest)
-        st.caption(
-            f"Quality: {quality['score']}/100 · evidence coverage {quality['evidence_coverage']} · "
-            f"confidence {quality['confidence']}"
-            + (f" · flags: {quality['hallucination_flags']}" if quality["hallucination_flags"] else "")
-        )
-        usage = latest.get("usage") or {}
-        if usage:
-            st.caption(
-                f"Vision usage: {usage.get('calls', 0)} calls · "
-                f"{usage.get('total_tokens', 0)} tokens · {usage.get('seconds', 0)}s"
-            )
-
-        if src:
-            if st.button("Export Markdown + HTML"):
-                paths = export.write(latest)
-                st.success("Exported: " + ", ".join(paths.values()))
-
-with tab_motion:
-    if not metrics:
-        st.info("No motion data yet.")
-    else:
-        activity = metrics.get("activity") or []
-        st.caption(
-            f"mean energy {metrics.get('mean_energy')} · peak at t={metrics.get('peak_motion_time')}s · "
-            f"net shift {metrics.get('net_shift')}"
-        )
-        if activity:
-            st.line_chart({"energy": [s["energy"] for s in activity]})
-            st.caption("Movement energy between consecutive sampled frames.")
-        mech = metrics.get("mechanics") or {}
-        if mech:
-            st.markdown("**Mechanics (proxy)**")
-            st.json(mech)
-        if metrics.get("ball"):
-            st.markdown("**Ball / rally (heuristic)**")
-            st.write(metrics["ball"].get("summary", ""))
-            rallies = metrics["ball"].get("rallies") or []
-            if rallies:
-                st.json(rallies)
-        if metrics.get("pose"):
-            st.markdown("**Pose (mediapipe)**")
-            st.json(metrics["pose"])
-        for key, caption in (
-            ("motion", "Motion map (red = movement)"),
-            ("pose", "Pose overlay"),
-            ("frames", "Sampled frames"),
-        ):
-            path = artifacts.get(key)
-            if path and Path(path).exists():
-                st.markdown(f"**{caption}**")
-                st.image(path)
-
-with tab_progress:
-    trend = latest.get("progress_trend") or {}
-    if not trend:
-        st.info("No progress data yet.")
-    else:
-        st.write(trend.get("text", ""))
-        st.caption(
-            f"sessions: {trend.get('sessions')} · repeated themes: "
-            f"{', '.join(trend.get('repeated_themes') or []) or 'none'} · "
-            f"last focus: {trend.get('focus_status', 'n/a')}"
-        )
-        counts = trend.get("issue_counts") or []
-        if counts:
-            st.line_chart({"issues per session": counts})
-        theme_trend = trend.get("theme_trend") or {}
-        if theme_trend:
-            st.markdown("**Theme counts per session**")
-            st.json(theme_trend)
-        focus_history = trend.get("focus_history") or []
-        if focus_history:
-            st.markdown("**Focus history**")
-            for i, focus in enumerate(focus_history, 1):
-                st.markdown(f"{i}. {focus}")
-
-with tab_compare:
-    if len(reports) < 2:
-        st.info("Analyze at least two videos to compare.")
-    else:
-        names = [render.video_name(r) for r in reports]
-        older = st.selectbox("Older", names, index=0)
-        newer = st.selectbox("Newer", names, index=len(names) - 1)
-        if st.button("Compare") and older != newer:
-            a = reports[names.index(older)]
-            b = reports[names.index(newer)]
-            result = compare_mod.compare(a, b)
-            st.write(result["text"])
-            if result["metric_deltas"]:
-                st.json(result["metric_deltas"])
-
-with tab_history:
-    if not reports:
-        st.info("No reports yet.")
-    for report in reversed(reports[-10:]):
-        st.markdown(
-            f"- **{render.video_name(report)}** · {report.get('date', '')} — {report.get('focus', '')}"
-        )
+_PAGES = {
+    "Home": _page_home,
+    "Analyze": _page_analyze,
+    "Result": _page_result,
+    "Practice": _page_practice,
+    "Progress": _page_progress,
+    "You": _page_you,
+}
+_PAGES.get(st.session_state.get("page", "Home"), _page_home)()
