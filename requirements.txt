@@ -1,0 +1,19 @@
+# Everything the demo can use, in one file. `pip install -r requirements.txt`
+# enables every feature (video analysis, pose, PDF export, API, MCP, tests).
+python-dotenv>=1.0
+numpy>=1.26
+Pillow>=10
+imageio>=2.34
+imageio-ffmpeg>=0.4
+streamlit>=1.36
+# Real joint pose (knee/elbow angles + skeleton overlay).
+mediapipe>=0.10
+# PDF export.
+reportlab>=4
+# HTTP API.
+fastapi>=0.110
+uvicorn>=0.29
+# MCP server.
+mcp>=1.2
+# Tests.
+pytest>=7
