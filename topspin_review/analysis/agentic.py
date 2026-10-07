@@ -19,7 +19,7 @@ from topspin_review.analysis import tools as report_tools
 from topspin_review.analysis import vision
 from topspin_review.analysis.progress import Progress, tick
 from topspin_review.bootstrap import setup
-from topspin_review.domain import progress
+from topspin_review.domain import progress as domain_progress
 from topspin_review.perception import ball, metrics, sampling
 from topspin_review.providers import get_backend
 from topspin_review.storage import runtime, store
@@ -173,7 +173,7 @@ async def analyze(
         workspace=runtime.workspace(),
     )
 
-    prev = progress.summarize(store.get_reports())
+    prev = domain_progress.summarize(store.get_reports())
     history = prev.get("text", "") if prev else "No previous report."
     query = (
         f"Today is {date.today().isoformat()}. "
@@ -200,7 +200,7 @@ async def analyze(
     )
     if report:
         tick(progress, "exporting", 97)
-        trend = progress.summarize(store.get_reports())
+        trend = domain_progress.summarize(store.get_reports())
         try:
             exports = reporting.write(report)
         except Exception:

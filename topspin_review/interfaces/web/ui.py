@@ -24,8 +24,17 @@ from topspin_review.storage import runtime, store
 setup()
 
 
+def _warm() -> None:
+    """Import the heavy analysis stack off the render thread (once per session)."""
+    try:
+        from topspin_review.analysis import agentic, pipeline  # noqa: F401
+    except Exception:
+        pass
+
+
 def _run_job(video: str, box, agentic: bool, prog: Progress, stem: str) -> None:
     """Worker: run the pipeline in its own thread, reporting progress."""
+    prog.update("starting", 1)
     from topspin_review.analysis import pipeline
 
     run = pipeline.analyze
@@ -51,18 +60,31 @@ def _poll_job() -> None:
     snap = prog.snapshot()
     if thread.is_alive():
         pct = min(max(float(snap["pct"]), 0.0), 100.0)
-        st.progress(pct / 100.0, text=f"Analyzing… {snap['stage']} ({int(pct)}%)")
+        elapsed = time.monotonic() - float(job.get("start", time.monotonic()))
+        st.progress(pct / 100.0, text=f"Analyzing… {snap['stage']} ({int(pct)}%) · {elapsed:.0f}s")
         time.sleep(0.5)
         st.rerun()
     st.session_state.pop("job", None)
     if snap.get("error"):
-        st.error(f"Analysis failed: {snap['error']}")
+        # Persist across the rerun below (an st.error shown now would be wiped).
+        st.session_state["job_error"] = snap["error"]
     else:
         st.session_state["latest_stem"] = snap.get("stem")
-        st.success(f"Done: {snap.get('stem')}")
+        st.session_state["job_done"] = snap.get("stem")
     st.rerun()
 
 st.set_page_config(page_title="Topspin Review", page_icon="🏓", layout="wide")
+
+# Pre-import the analysis stack in the background so the first Analyze click is
+# not stalled by a multi-second import under the GIL.
+if not st.session_state.get("_warm_started"):
+    st.session_state["_warm_started"] = True
+    threading.Thread(target=_warm, daemon=True).start()
+
+if st.session_state.get("job_error"):
+    st.error(f"Analysis failed: {st.session_state.pop('job_error')}")
+if st.session_state.get("job_done"):
+    st.success(f"Done: {st.session_state.pop('job_done')}")
 
 st.title("🏓 Topspin Review")
 st.caption("Analyze a session video — measured motion, footwork, and drills.")
@@ -121,7 +143,7 @@ with st.sidebar:
                 target=_run_job, args=(str(target), box, agentic, prog, target.stem), daemon=True
             )
             worker.start()
-            st.session_state["job"] = {"thread": worker, "prog": prog}
+            st.session_state["job"] = {"thread": worker, "prog": prog, "start": time.monotonic()}
             st.rerun()
 
     if st.button("Reset reports"):

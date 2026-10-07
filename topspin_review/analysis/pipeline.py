@@ -11,7 +11,7 @@ from topspin_review import config, observability, reporting
 from topspin_review.analysis import prompts, rails as rails_mod, report_agent, retrieval, vision
 from topspin_review.analysis.progress import Progress, tick
 from topspin_review.bootstrap import setup
-from topspin_review.domain import progress
+from topspin_review.domain import progress as domain_progress
 from topspin_review.perception import ball, imaging, metrics, pose, sampling
 from topspin_review.providers import get_backend
 from topspin_review.storage import runtime, store
@@ -148,7 +148,7 @@ async def analyze(
     observations = vision.observations_text(coarse_out, fine_out)
 
     all_reports = store.get_reports()
-    prev_progress = progress.summarize(all_reports)
+    prev_progress = domain_progress.summarize(all_reports)
     progress_note = prev_progress.get("text", "") if prev_progress else "No previous report."
     repeated = ", ".join(prev_progress.get("repeated_themes", [])) if prev_progress else ""
 
@@ -213,7 +213,7 @@ async def analyze(
 
     if report:
         tick(progress, "exporting", 97)
-        trend = progress.summarize(store.get_reports())
+        trend = domain_progress.summarize(store.get_reports())
         try:
             exports = reporting.write(report)
         except Exception:
