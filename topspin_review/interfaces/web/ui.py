@@ -6,19 +6,61 @@ Run:
 
 from __future__ import annotations
 
-import asyncio
+import os
+import threading
+import time
 from pathlib import Path
 
 import streamlit as st
 
-from topspin_review import config
+from topspin_review import reporting as export
+from topspin_review.analysis.progress import Progress
+from topspin_review.bootstrap import run as run_async
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import evaluate, render
-from topspin_review import reporting as export
 from topspin_review.storage import runtime, store
 
 setup()
+
+
+def _run_job(video: str, box, agentic: bool, prog: Progress, stem: str) -> None:
+    """Worker: run the pipeline in its own thread, reporting progress."""
+    from topspin_review.analysis import pipeline
+
+    run = pipeline.analyze
+    if agentic:
+        from topspin_review.analysis import agentic
+
+        run = agentic.analyze
+    try:
+        run_async(run(video, region_box=box, progress=prog))
+    except Exception as exc:  # noqa: BLE001
+        prog.fail(str(exc))
+    else:
+        prog.finish(stem)
+
+
+def _poll_job() -> None:
+    """Render live progress and rerun until the background job finishes."""
+    job = st.session_state.get("job")
+    if not job:
+        return
+    prog: Progress = job["prog"]
+    thread: threading.Thread = job["thread"]
+    snap = prog.snapshot()
+    if thread.is_alive():
+        pct = min(max(float(snap["pct"]), 0.0), 100.0)
+        st.progress(pct / 100.0, text=f"Analyzing… {snap['stage']} ({int(pct)}%)")
+        time.sleep(0.5)
+        st.rerun()
+    st.session_state.pop("job", None)
+    if snap.get("error"):
+        st.error(f"Analysis failed: {snap['error']}")
+    else:
+        st.session_state["latest_stem"] = snap.get("stem")
+        st.success(f"Done: {snap.get('stem')}")
+    st.rerun()
 
 st.set_page_config(page_title="Topspin Review", page_icon="🏓", layout="wide")
 
@@ -43,6 +85,11 @@ with st.sidebar:
 
     agentic = st.checkbox("Agentic (model-driven analysis)")
 
+    with st.expander("Speed settings", expanded=False):
+        max_frames = st.number_input("Frames sampled (fewer = faster)", 4, 30, 12, 1)
+        max_seconds = st.number_input("Limit to first N seconds (0 = whole clip)", 0, 3600, 0, 5)
+    st.caption("Analysis runs the model several times; expect ~1-3 min for a 1080p clip.")
+
     st.caption("Optional: restrict analysis to the player (normalized 0..1)")
     use_box = st.checkbox("Use player region")
     box = None
@@ -53,7 +100,7 @@ with st.sidebar:
         bottom = st.slider("bottom", 0.0, 1.0, 1.0, 0.05)
         box = (left, top, right, bottom)
 
-    if st.button("Analyze", type="primary"):
+    if st.button("Analyze", type="primary", disabled="job" in st.session_state):
         if uploaded is not None:
             target = runtime.DATA_DIR / f"upload_{uploaded.name}"
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -67,35 +114,33 @@ with st.sidebar:
         elif not target.exists():
             st.error(f"Not found: {target}")
         else:
-            with st.spinner("Measuring motion and analyzing frames…"):
-                from topspin_review.analysis import pipeline
-
-                run = pipeline.analyze
-                if agentic:
-                    from topspin_review.analysis import agentic
-
-                    run = agentic.analyze
-
-                try:
-                    asyncio.run(run(str(target), region_box=box))
-                    st.success("Done.")
-                    st.rerun()
-                except (config.ConfigError, FileNotFoundError) as exc:
-                    st.error(str(exc))
-                except Exception as exc:  # noqa: BLE001
-                    st.exception(exc)
+            os.environ["VISION_MAX_FRAMES"] = str(int(max_frames))
+            os.environ["VISION_MAX_SECONDS"] = str(int(max_seconds))
+            prog = Progress()
+            worker = threading.Thread(
+                target=_run_job, args=(str(target), box, agentic, prog, target.stem), daemon=True
+            )
+            worker.start()
+            st.session_state["job"] = {"thread": worker, "prog": prog}
+            st.rerun()
 
     if st.button("Reset reports"):
         store.reset()
         st.session_state.pop("seek", None)
+        st.session_state.pop("job", None)
         st.rerun()
 
+_poll_job()
+
 reports = store.get_reports()
-latest = reports[-1] if reports else {}
+latest = store.find_report(st.session_state.get("latest_stem", "")) if st.session_state.get("latest_stem") else None
+if latest is None:
+    getter = getattr(store, "latest_report", None)
+    latest = (getter() if callable(getter) else None) or (reports[-1] if reports else {})
 artifacts = latest.get("artifacts") or {}
 metrics = latest.get("metrics") or {}
 
-st.subheader(f"{latest.get('sport', '')} — {latest.get('date', '')}" if latest else "No report yet")
+st.subheader(f"{render.video_name(latest)} — {latest.get('sport', '')} ({latest.get('date', '')})" if latest else "No report yet")
 
 tab_report, tab_motion, tab_progress, tab_compare, tab_history = st.tabs(
     ["Report", "Motion", "Progress", "Compare", "History"]
@@ -106,14 +151,15 @@ with tab_report:
         st.info("No report yet. Analyze a clip from the sidebar.")
     else:
         src = latest.get("source")
-        seek = int(st.session_state.get("seek", 0) or 0)
+        seek = float(st.session_state.get("seek", 0.0) or 0.0)
         if src and Path(src).exists():
+            # st.video's start_time is whole seconds; round the evidence time.
             try:
-                st.video(src, start_time=seek)
+                st.video(src, start_time=int(round(seek)))
             except TypeError:
                 st.video(src)
             if seek:
-                st.caption(f"Jumped to t={seek}s.")
+                st.caption(f"Seeking to t={seek:.1f}s (video starts near there).")
         else:
             st.caption(f"(video not found: {src})")
 
@@ -138,7 +184,7 @@ with tab_report:
                         cols = st.columns(len(times))
                         for c, t in zip(cols, times):
                             if c.button(f"▶ t={t}s", key=f"seek_{idx}_{t}"):
-                                st.session_state.seek = int(float(t))
+                                st.session_state.seek = float(t)
                                 st.rerun()
                 else:
                     st.markdown(f"- {item}")

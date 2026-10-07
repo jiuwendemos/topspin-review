@@ -9,6 +9,7 @@ from typing import Any
 
 from topspin_review import config, observability, reporting
 from topspin_review.analysis import prompts, rails as rails_mod, report_agent, retrieval, vision
+from topspin_review.analysis.progress import Progress, tick
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress
 from topspin_review.perception import ball, imaging, metrics, pose, sampling
@@ -104,13 +105,16 @@ def _save_artifacts(
 async def analyze(
     video_path: str,
     region_box: tuple[float, float, float, float] | None = None,
+    progress: Progress | None = None,
 ) -> dict[str, Any]:
     """Measure motion, run two vision passes, then have the agent write the report.
 
     ``region_box`` (normalized l,t,r,b) restricts analysis to a user-picked area.
+    ``progress`` (optional) receives stage/percent updates.
     """
     from openjiuwen.core.runner import Runner
 
+    tick(progress, "preparing", 2)
     setup()
     config.validate()
     if not Path(video_path).exists():
@@ -120,19 +124,26 @@ async def analyze(
     store.set_current_video(video_path)
     profile = store.get_profile()
 
+    tick(progress, "sampling frames", 8)
     meta, frames, timestamps = sampling.sample_frames(video_path, config.max_frames(), config.use_cache())
     if not frames:
         raise ValueError("No frames could be extracted from the video.")
 
+    tick(progress, "measuring motion", 22)
     steps = metrics.activity(frames, timestamps)
     ball_info = ball.detect(frames, timestamps, steps)
     measured = metrics.analyze(frames, timestamps, ball=ball_info, region_box=region_box)
+
+    tick(progress, "writing artifacts", 30)
     artifact_paths = _save_artifacts(video_path, frames, timestamps, measured, region_box)
 
     backend = get_backend()
+    tick(progress, "vision: overview", 38)
     coarse_out = await vision.coarse(meta, frames, timestamps, measured, profile, backend=backend)
     windows = _clean_windows(coarse_out.get("attentive_windows"), timestamps, config.max_windows())
+    tick(progress, "vision: zoom", 52)
     zoom_frames, zoom_times = _zoom_frames(video_path, windows, config.zoom_frames())
+    tick(progress, "vision: detail", 60)
     fine_out = await vision.fine(frames, timestamps, measured, windows, zoom_frames, zoom_times, profile, backend=backend)
     observations = vision.observations_text(coarse_out, fine_out)
 
@@ -147,6 +158,7 @@ async def analyze(
 
     window_label = ", ".join(f"{w['start']}-{w['end']}s" for w in windows) or "none"
 
+    tick(progress, "writing report", 72)
     trace = observability.CallbackTrace()
     trace_on = config.trace_callbacks() and trace.install()
     report_rails = rails_mod.build_rails() if config.rails_enabled() else []
@@ -171,6 +183,7 @@ async def analyze(
         "then give me a short summary."
     )
     result = await Runner.run_agent(agent, {"query": query})
+    tick(progress, "saving report", 92)
 
     vision_usage = backend.usage_summary() if hasattr(backend, "usage_summary") else {}
     text = text_usage.summary()
@@ -199,12 +212,15 @@ async def analyze(
     )
 
     if report:
+        tick(progress, "exporting", 97)
         trend = progress.summarize(store.get_reports())
         try:
             exports = reporting.write(report)
         except Exception:
             exports = {}
         report = store.patch_last_report({"progress_trend": trend, "exports": exports})
+
+    tick(progress, "done", 100)
 
     return {
         "result": result,

@@ -9,10 +9,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import sys
 
 from topspin_review import config
+from topspin_review.bootstrap import run as run_async
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import render
@@ -92,7 +92,7 @@ def cmd_analyze(path: str, box: str | None = None, agentic: bool = False) -> int
         run = agentic.analyze
 
     try:
-        outcome = asyncio.run(run(path, region_box=_parse_box(box)))
+        outcome = run_async(run(path, region_box=_parse_box(box)))
     except (config.ConfigError, FileNotFoundError) as exc:
         print(f"error: {exc}")
         return 2

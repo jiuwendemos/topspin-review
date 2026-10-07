@@ -17,6 +17,7 @@ from topspin_review import config, reporting
 from topspin_review.analysis import prompts, rails as rails_mod
 from topspin_review.analysis import tools as report_tools
 from topspin_review.analysis import vision
+from topspin_review.analysis.progress import Progress, tick
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress
 from topspin_review.perception import ball, metrics, sampling
@@ -119,11 +120,16 @@ async def _ensure_runner() -> None:
         _runner_started = True
 
 
-async def analyze(video_path: str, region_box: tuple[float, float, float, float] | None = None) -> dict[str, Any]:
+async def analyze(
+    video_path: str,
+    region_box: tuple[float, float, float, float] | None = None,
+    progress: Progress | None = None,
+) -> dict[str, Any]:
     """Model-driven analysis: the agent inspects the clip and writes the report."""
     from openjiuwen.core.runner import Runner
     from openjiuwen.harness import create_deep_agent
 
+    tick(progress, "preparing", 2)
     setup()
     config.validate()
     if not Path(video_path).exists():
@@ -133,10 +139,12 @@ async def analyze(video_path: str, region_box: tuple[float, float, float, float]
     store.set_current_video(video_path)
     profile = store.get_profile()
 
+    tick(progress, "sampling frames", 8)
     _meta, frames, timestamps = sampling.sample_frames(video_path, config.max_frames(), config.use_cache())
     if not frames:
         raise ValueError("No frames could be extracted from the video.")
 
+    tick(progress, "measuring motion", 22)
     steps = metrics.activity(frames, timestamps)
     ball_info = ball.detect(frames, timestamps, steps)
     measured = metrics.analyze(frames, timestamps, ball=ball_info, region_box=region_box)
@@ -175,7 +183,9 @@ async def analyze(video_path: str, region_box: tuple[float, float, float, float]
         f"History: {history}\n"
         "Start with get_measurements, inspect the interesting windows, then save the report."
     )
+    tick(progress, "agent: analyzing", 45)
     result = await Runner.run_agent(agent, {"query": query})
+    tick(progress, "saving report", 92)
 
     vision_usage = backend.usage_summary() if hasattr(backend, "usage_summary") else {}
     report = store.patch_last_report(
@@ -189,12 +199,15 @@ async def analyze(video_path: str, region_box: tuple[float, float, float, float]
         }
     )
     if report:
+        tick(progress, "exporting", 97)
         trend = progress.summarize(store.get_reports())
         try:
             exports = reporting.write(report)
         except Exception:
             exports = {}
         report = store.patch_last_report({"progress_trend": trend, "exports": exports})
+
+    tick(progress, "done", 100)
 
     return {
         "result": result,

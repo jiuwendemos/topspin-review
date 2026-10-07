@@ -55,13 +55,23 @@ def set_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_reports() -> list[dict[str, Any]]:
-    """All saved reports, oldest first — one file per analyzed video."""
+    """All saved reports, oldest first (by file mtime) — one file per video."""
+    paths = sorted(
+        DATA_DIR.glob(f"*{REPORT_SUFFIX}"),
+        key=lambda p: p.stat().st_mtime,
+    )
     reports: list[dict[str, Any]] = []
-    for path in sorted(DATA_DIR.glob(f"*{REPORT_SUFFIX}")):
+    for path in paths:
         report = _read(path, {})
         if isinstance(report, dict) and report:
             reports.append(report)
     return reports
+
+
+def latest_report() -> dict[str, Any] | None:
+    """The most recently written report, or ``None``."""
+    reports = get_reports()
+    return reports[-1] if reports else None
 
 
 def add_report(report: dict[str, Any]) -> dict[str, Any]:

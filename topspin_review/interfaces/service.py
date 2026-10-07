@@ -7,8 +7,9 @@ the ``analyze_sport_video`` tool contract (used by the MCP tool and server).
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
+
+from topspin_review.bootstrap import run as run_async
 
 TOOL_NAME = "analyze_sport_video"
 TOOL_DESCRIPTION = (
@@ -51,7 +52,7 @@ async def analyze_video(
 def analyze_video_sync(
     video_path: str, region_box: tuple[float, float, float, float] | None = None
 ) -> dict[str, Any]:
-    return asyncio.run(analyze_video(video_path, region_box=region_box))
+    return run_async(analyze_video(video_path, region_box=region_box))
 
 
 def describe() -> dict[str, Any]:
