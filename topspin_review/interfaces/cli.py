@@ -1,10 +1,9 @@
 """Command-line interface for Topspin Review.
 
 Usage:
-    python -m topspin_review.cli profile
-    python -m topspin_review.cli analyze [video_path]
-    python -m topspin_review.cli history
-    python -m topspin_review.cli reset
+    python -m topspin_review.interfaces.cli profile
+    python -m topspin_review.interfaces.cli analyze [video_path]
+    python -m topspin_review.interfaces.cli history
 """
 
 from __future__ import annotations
@@ -12,10 +11,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from pathlib import Path
 
+from topspin_review import config
+from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
-from topspin_review.reporting import export
+from topspin_review.domain import render
+from topspin_review import reporting as export
 from topspin_review.storage import runtime, store
 
 for _stream in (sys.stdout, sys.stderr):
@@ -43,34 +44,19 @@ def cmd_profile() -> int:
     return 0
 
 
-def _video_name(report: dict) -> str:
-    """The analyzed video's file name, used to identify the report."""
-    source = report.get("source")
-    return Path(source).name if source else "(unknown video)"
-
-
-def _print_issue(item: object) -> str:
-    if isinstance(item, dict):
-        times = ", ".join(str(t) for t in (item.get("evidence_times") or []))
-        conf = item.get("confidence") or "?"
-        suffix = f"  [t={times}; confidence {conf}]" if times else f"  [confidence {conf}]"
-        return f"{item.get('issue', item)}{suffix}"
-    return str(item)
-
-
 def _print_list(label: str, items: list) -> None:
     if not items:
         return
     print(f"\n  {label}:")
     for item in items:
-        text = _print_issue(item) if label == "Issues" else str(item)
+        text = render.issue_line(item) if label == "Issues" else str(item)
         print(f"    - {text}")
 
 
 def _print_report(report: dict) -> None:
     if not report:
         return
-    print(f"\nReport — {_video_name(report)} · {report.get('sport', '')} ({report.get('date', '')})")
+    print(f"\nReport — {render.video_name(report)} · {report.get('sport', '')} ({report.get('date', '')})")
     if report.get("summary"):
         print(f"\n  {report['summary']}")
     _print_list("Strengths", report.get("strengths") or [])
@@ -96,9 +82,13 @@ def _parse_box(text: str | None) -> tuple[float, float, float, float] | None:
 
 
 def cmd_analyze(path: str, box: str | None = None) -> int:
-    from topspin_review.analysis import agent
+    from topspin_review.analysis import pipeline
 
-    outcome = asyncio.run(agent.analyze(path, region_box=_parse_box(box)))
+    try:
+        outcome = asyncio.run(pipeline.analyze(path, region_box=_parse_box(box)))
+    except (config.ConfigError, FileNotFoundError) as exc:
+        print(f"error: {exc}")
+        return 2
     result = outcome.get("result") if isinstance(outcome, dict) else None
     output = result.get("output") if isinstance(result, dict) else str(result)
     print("\n[coach] " + (output or "").strip())
@@ -125,7 +115,8 @@ def cmd_history() -> int:
     print(f"Saved reports ({len(reports)}):\n")
     for report in reports[-5:]:
         print(
-            f"  {_video_name(report)} · {report.get('date', '?')} · {report.get('sport', '')} · {report.get('focus', '')}"
+            f"  {render.video_name(report)} · {report.get('date', '?')} · "
+            f"{report.get('sport', '')} · {report.get('focus', '')}"
         )
     print()
     _print_report(reports[-1])
@@ -133,33 +124,19 @@ def cmd_history() -> int:
 
 
 def cmd_export(video: str | None = None) -> int:
-    reports = store.get_reports()
-    if not reports:
-        print("No reports yet. Run `analyze` first.")
-        return 0
-    report = reports[-1]
-    if video:
-        stem = Path(video).stem
-        match = [r for r in reports if Path(r.get("source", "")).stem == stem]
-        if not match:
-            print(f"No report for {video}.")
-            return 1
-        report = match[-1]
+    report = store.find_report(video) if video else (store.get_reports() or [None])[-1]
+    if not report:
+        print(f"No report for {video}." if video else "No reports yet. Run `analyze` first.")
+        return 1 if video else 0
     paths = export.write(report)
-    print(f"Exported {_video_name(report)}:")
+    print(f"Exported {render.video_name(report)}:")
     for kind, path in paths.items():
         print(f"  {kind}: {path}")
     return 0
 
 
-def _find_report(video: str) -> dict | None:
-    stem = Path(video).stem
-    matches = [r for r in store.get_reports() if Path(r.get("source", "")).stem == stem]
-    return matches[-1] if matches else None
-
-
 def cmd_compare(video_a: str, video_b: str) -> int:
-    older, newer = _find_report(video_a), _find_report(video_b)
+    older, newer = store.find_report(video_a), store.find_report(video_b)
     if not older or not newer:
         missing = video_a if not older else video_b
         print(f"No report for {missing}. Analyze it first.")
@@ -180,7 +157,7 @@ def cmd_reset() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    runtime.setup()
+    setup()
     parser = argparse.ArgumentParser(prog="topspin-review", description="Topspin Review CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 

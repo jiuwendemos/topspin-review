@@ -1,4 +1,4 @@
-"""The agent's tools — thin wrappers over :mod:`topspin_review.store`."""
+"""The agent's tools — thin wrappers over :mod:`topspin_review.storage.store`."""
 
 from __future__ import annotations
 
@@ -52,7 +52,8 @@ def recent_reports(n: int = 5) -> str:
     description=(
         "Save the coaching report. report_json: an object with keys "
         "date (string), sport (string), summary (string), strengths (array of strings), "
-        "issues (array of strings), drills (array of strings), focus (string)."
+        "issues (array of {issue: string, evidence_times: [number], confidence: 'high'|'medium'|'low'}), "
+        "drills (array of strings), focus (string), progress (string), limitations (array of strings)."
     ),
     input_params={
         "type": "object",

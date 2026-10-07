@@ -6,15 +6,13 @@ want a quick confidence check on a generated report.
 
 from __future__ import annotations
 
+from topspin_review.domain import report as report_schema
+
 _FORBIDDEN = ("spin", "rpm", "km/h", "kph", "mph", "ball speed", "degrees", "exact angle")
 
 
-def _issues(report: dict) -> list[dict]:
-    return [i for i in (report.get("issues") or []) if isinstance(i, dict)]
-
-
 def score(report: dict) -> dict:
-    issues = _issues(report)
+    issues = [i for i in report_schema.issues(report) if isinstance(i, dict)]
     with_evidence = [i for i in issues if i.get("evidence_times")]
     coverage = round(len(with_evidence) / len(issues), 2) if issues else 0.0
 

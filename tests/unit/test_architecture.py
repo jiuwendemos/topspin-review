@@ -1,8 +1,8 @@
 """Enforce the layered dependency direction (architecture as a test).
 
-Rules (dependencies may only point inward):
-- ``domain`` imports no other app layer and no third-party libraries.
-- ``perception`` imports no ``analysis``/``interfaces`` layer.
+Dependencies may only point inward:
+    interfaces -> analysis -> providers / perception -> domain
+with ``observability``, ``storage`` and ``config`` as neutral leaves.
 """
 
 from __future__ import annotations
@@ -11,17 +11,27 @@ import ast
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parents[2] / "topspin_review"
-LAYERS = {"domain", "perception", "analysis", "providers", "storage", "reporting", "interfaces"}
 
-FORBIDDEN = {
-    "domain": {"perception", "analysis", "providers", "storage", "reporting", "interfaces"},
-    "perception": {"analysis", "interfaces"},
+# Layers that are single modules at the package root (not sub-packages).
+TOP_LAYERS = {"observability", "providers", "reporting"}
+
+# For each layer, the app layers it must NOT import.
+FORBIDDEN: dict[str, set[str]] = {
+    "domain": {"observability", "perception", "analysis", "providers", "storage", "reporting", "interfaces"},
+    "observability": {"domain", "perception", "analysis", "providers", "storage", "reporting", "interfaces"},
+    "perception": {"analysis", "providers", "interfaces"},
+    "providers": {"domain", "perception", "analysis", "reporting", "interfaces"},
+    "storage": {"domain", "perception", "analysis", "providers", "reporting", "interfaces"},
+    "reporting": {"observability", "perception", "analysis", "providers", "interfaces"},
+    "analysis": {"interfaces"},
 }
 
 
 def _layer_of(path: Path) -> str | None:
     rel = path.relative_to(PKG)
-    return rel.parts[0] if len(rel.parts) > 1 else None
+    if len(rel.parts) == 1:
+        return rel.stem if rel.stem in TOP_LAYERS else None
+    return rel.parts[0]
 
 
 def _imports(path: Path) -> set[str]:
@@ -32,6 +42,7 @@ def _imports(path: Path) -> set[str]:
             found.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             found.add(node.module)
+            found.update(f"{node.module}.{alias.name}" for alias in node.names)
     return found
 
 

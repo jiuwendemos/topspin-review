@@ -1,7 +1,7 @@
 """Pluggable vision backends behind one small interface.
 
-The default backend calls the OpenAI-compatible vision model, with retries,
-a timeout and per-call usage tracking. Swap it with ``VISION_BACKEND=mock`` for
+The default backend calls the OpenAI-compatible vision model, with retries, a
+timeout and per-call usage tracking. Swap it with ``VISION_BACKEND=mock`` for
 offline tests, or add a new class here (a local model, or a provider that accepts
 real video) without touching the pipeline.
 """
@@ -9,21 +9,15 @@ real video) without touching the pipeline.
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from typing import Any, Protocol
 
-from topspin_review import config
-from topspin_review.analysis import usage as usage_mod
+from topspin_review import config, observability
 
 
 class VisionBackend(Protocol):
     async def complete(self, messages: list[dict[str, Any]]) -> str: ...
     def usage_summary(self) -> dict: ...
-
-
-def summarize_usage(usages: list[dict]) -> dict:
-    return usage_mod.summarize(usages)
 
 
 class OpenAIVisionBackend:
@@ -40,7 +34,7 @@ class OpenAIVisionBackend:
             try:
                 result = await asyncio.wait_for(self._model.invoke(messages), timeout=config.llm_timeout())
                 record = {"backend": "openai", "seconds": round(time.monotonic() - start, 2)}
-                record.update(usage_mod.extract_usage(result))
+                record.update(observability.extract_usage(result))
                 self.usages.append(record)
                 return getattr(result, "content", str(result)) or ""
             except Exception as exc:  # noqa: BLE001
@@ -50,7 +44,7 @@ class OpenAIVisionBackend:
         raise last if last is not None else RuntimeError("vision call failed")
 
     def usage_summary(self) -> dict:
-        return {"backend": "openai", **summarize_usage(self.usages)}
+        return {"backend": "openai", **observability.summarize(self.usages)}
 
 
 class MockVisionBackend:
@@ -78,6 +72,6 @@ _BACKENDS = {"openai": OpenAIVisionBackend, "mock": MockVisionBackend}
 
 
 def get_backend(name: str | None = None) -> VisionBackend:
-    resolved = (name or os.getenv("VISION_BACKEND", "openai")).strip().lower()
+    resolved = (name or config.vision_backend()).strip().lower()
     factory = _BACKENDS.get(resolved, OpenAIVisionBackend)
     return factory()

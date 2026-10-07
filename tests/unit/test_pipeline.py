@@ -7,11 +7,13 @@ import asyncio
 import numpy as np
 from PIL import Image, ImageDraw
 
-from topspin_review.analysis import usage, vision
+from topspin_review import observability as usage
+from topspin_review import providers as backends
+from topspin_review import reporting as export
+from topspin_review.analysis import vision
+from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import evaluate, progress, report
-from topspin_review.perception import ball, cvutil, motion
-from topspin_review.providers import backends
-from topspin_review.reporting import export
+from topspin_review.perception import ball, cvutil, metrics
 
 
 def moving_frames(n: int = 8, step: int = 8) -> tuple[list[Image.Image], list[float]]:
@@ -49,21 +51,43 @@ def test_components_finds_blob():
     assert len(comps) == 1 and comps[0]["area"] == 4
 
 
+def test_largest_component():
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[1:3, 1:3] = True
+    mask[6:9, 6:9] = True
+    big = cvutil.largest(mask)
+    assert big is not None and int(big.sum()) == 9
+
+
 def test_ball_tracks_moving_blob():
     frames, ts = moving_frames()
-    steps = motion.activity(frames, ts)
+    steps = metrics.activity(frames, ts)
     info = ball.detect(frames, ts, steps)
     assert info["tracks"], "expected a tracked ball"
     assert len(info["tracks"][0]["points"]) >= 3
 
 
+def test_metrics_keys_and_mechanics():
+    frames, ts = moving_frames()
+    steps = metrics.activity(frames, ts)
+    measured = metrics.analyze(frames, ts, ball=ball.detect(frames, ts, steps))
+    for key in ("activity", "track", "posture", "mechanics", "ball", "mean_energy", "peak_motion_time", "net_shift"):
+        assert key in measured
+    assert measured["mechanics"]["lower_lateral_range"] > 0
+
+
 def test_motion_mechanics_move_vs_still():
     frames, ts = moving_frames()
-    moving = motion.analyze(frames, ts)
+    moving = metrics.analyze(frames, ts)
     still_frames, still_ts = stationary_frames()
-    still = motion.analyze(still_frames, still_ts)
+    still = metrics.analyze(still_frames, still_ts)
     assert moving["mechanics"]["lower_lateral_range"] > still["mechanics"]["lower_lateral_range"]
     assert moving["mean_energy"] > still["mean_energy"]
+
+
+def test_region_from_box():
+    box = metrics.region_from_box((0.2, 0.1, 0.8, 0.9))
+    assert box.shape == (180, 320) and box.any()
 
 
 def test_report_schema_and_score():
@@ -105,6 +129,14 @@ def test_progress_focus_achieved():
     trend = progress.summarize([previous, latest])
     assert trend["focus_achieved"] is True
     assert trend["focus_status"] == "achieved"
+
+
+def test_compare_detects_improvement():
+    older = {"issues": [{"issue": "footwork"}], "metrics": {"mechanics": {"lower_lateral_range": 0.1}}}
+    newer = {"issues": [{"issue": "late prep"}], "metrics": {"mechanics": {"lower_lateral_range": 0.2}}}
+    diff = compare_mod.compare(older, newer)
+    assert "footwork" in diff["improved"]
+    assert diff["metric_deltas"]["lower_lateral_range"] == 0.1
 
 
 def test_export_markdown_and_html():
@@ -150,7 +182,9 @@ def test_service_describe():
 
     desc = service.describe()
     assert desc["name"] == "analyze_sport_video"
-    assert "video_path" in desc["input_schema"]["properties"]
+    assert "video_path" in desc["input_params"]["properties"]
+    assert service.parse_region_box([0.1, 0.2, 0.3, 0.4]) == (0.1, 0.2, 0.3, 0.4)
+    assert service.parse_region_box("bad") is None
 
 
 def test_mcp_tool_defined():
@@ -179,14 +213,6 @@ def test_mcp_server_module_imports():
     from topspin_review.interfaces.mcp import server
 
     assert callable(server.main)
-
-
-def test_largest_component():
-    mask = np.zeros((10, 10), dtype=bool)
-    mask[1:3, 1:3] = True
-    mask[6:9, 6:9] = True
-    big = cvutil.largest(mask)
-    assert big is not None and int(big.sum()) == 9
 
 
 def test_pose_graceful_without_mediapipe():

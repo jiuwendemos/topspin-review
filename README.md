@@ -79,6 +79,7 @@ Layered (hexagonal) — dependencies point inward only, enforced by
 
 ```
 interfaces → analysis → providers/perception → domain
+        (observability / storage / config are neutral leaves)
 ```
 
 ```
@@ -87,29 +88,23 @@ topspin-review/
 ├── runtime/                  # generated state, gitignored (created on first run)
 │   ├── workspace/  logs/     # DeepAgent workspace scaffold + openjiuwen logs
 │   └── data/                 # profile, <video>_report.json, cache/, artifacts/, exports/
-├── src modules under topspin_review/
-│   ├── config.py             # settings from env
-│   ├── domain/               # pure: no I/O, no third-party libs
-│   │   ├── report.py  progress.py  compare.py  evaluate.py
-│   ├── perception/           # frames -> measurements (numpy/PIL)
-│   │   ├── sampling.py  cvutil.py  motion.py  ball.py  pose.py  video.py
-│   ├── analysis/             # orchestration + model interaction
-│   │   ├── agent.py  vision.py  tools.py  usage.py
-│   ├── providers/            # model/vision adapters (openai / mock; swappable)
-│   │   └── backends.py
-│   ├── storage/              # paths + persistence
-│   │   ├── runtime.py  store.py
-│   ├── reporting/            # outbound artifacts
-│   │   └── export.py
-│   └── interfaces/           # inbound adapters
-│       ├── cli.py  api.py  service.py
-│       ├── mcp/{tools.py,server.py}
-│       └── web/ui.py
+├── topspin_review/
+│   ├── __init__.py           # version only (no side effects)
+│   ├── bootstrap.py          # runtime dirs + logging; called by entry points
+│   ├── config.py             # settings from env (incl. vision_backend)
+│   ├── observability.py      # token/latency usage (neutral)
+│   ├── providers.py          # vision adapters (openai / mock; swappable)
+│   ├── reporting.py          # Markdown / HTML / PDF export
+│   ├── domain/               # pure: report, progress, compare, evaluate, render
+│   ├── perception/           # sampling, metrics, ball, pose, imaging, cvutil
+│   ├── analysis/             # pipeline, report_agent, prompts, vision, tools
+│   ├── storage/              # runtime, cache, json_store, store
+│   └── interfaces/           # cli, api, service, mcp/, web/
 ├── tests/
 │   ├── unit/                 # pipeline + architecture tests
 │   ├── integration/          # full-pipeline tests (need a model endpoint)
 │   └── eval/expected.json    # labeled expectations for quality checks
-├── scripts/                  # dev tools: make_sample, eval, benchmark, evaluate_reports
+├── scripts/                  # dev tools: make_sample, evaluate_reports
 ├── docs/architecture.md
 ├── .github/workflows/ci.yml
 ├── .env
@@ -143,11 +138,9 @@ also works — the project is self-contained.
 
 ```powershell
 # deterministic checks (no model calls)
-& $PY scripts\eval.py
-& $PY scripts\benchmark.py
-& $PY scripts\evaluate_reports.py
 & $PY -m pytest -q                 # unit + architecture tests
 & $PY -m ruff check .
+& $PY scripts\evaluate_reports.py  # quality gate against tests/eval/expected.json
 ```
 
 Compare two analyzed sessions, export, and serve:

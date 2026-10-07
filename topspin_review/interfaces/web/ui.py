@@ -1,7 +1,7 @@
 """Streamlit UI for Topspin Review.
 
 Run:
-    streamlit run topspin_review/ui.py
+    streamlit run topspin_review/interfaces/web/ui.py
 """
 
 from __future__ import annotations
@@ -11,12 +11,14 @@ from pathlib import Path
 
 import streamlit as st
 
+from topspin_review import config
+from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
-from topspin_review.domain import evaluate
-from topspin_review.reporting import export
+from topspin_review.domain import evaluate, render
+from topspin_review import reporting as export
 from topspin_review.storage import runtime, store
 
-runtime.setup()
+setup()
 
 st.set_page_config(page_title="Topspin Review", page_icon="🏓", layout="wide")
 
@@ -64,13 +66,13 @@ with st.sidebar:
             st.error(f"Not found: {target}")
         else:
             with st.spinner("Measuring motion and analyzing frames…"):
-                from topspin_review.analysis import agent
+                from topspin_review.analysis import pipeline
 
                 try:
-                    asyncio.run(agent.analyze(str(target), region_box=box))
+                    asyncio.run(pipeline.analyze(str(target), region_box=box))
                     st.success("Done.")
                     st.rerun()
-                except SystemExit as exc:
+                except (config.ConfigError, FileNotFoundError) as exc:
                     st.error(str(exc))
                 except Exception as exc:  # noqa: BLE001
                     st.exception(exc)
@@ -221,7 +223,7 @@ with tab_compare:
     if len(reports) < 2:
         st.info("Analyze at least two videos to compare.")
     else:
-        names = [Path(r.get("source", f"report {i}")).name for i, r in enumerate(reports)]
+        names = [render.video_name(r) for r in reports]
         older = st.selectbox("Older", names, index=0)
         newer = st.selectbox("Newer", names, index=len(names) - 1)
         if st.button("Compare") and older != newer:
@@ -237,5 +239,5 @@ with tab_history:
         st.info("No reports yet.")
     for report in reversed(reports[-10:]):
         st.markdown(
-            f"- **{Path(report.get('source', '?')).name}** · {report.get('date', '')} — {report.get('focus', '')}"
+            f"- **{render.video_name(report)}** · {report.get('date', '')} — {report.get('focus', '')}"
         )

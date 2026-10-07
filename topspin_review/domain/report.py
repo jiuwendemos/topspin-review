@@ -12,6 +12,19 @@ from typing import Any
 CONFIDENCE = {"high", "medium", "low"}
 
 
+def issues(report: dict) -> list[Any]:
+    """Raw issue entries (dicts or legacy strings) from a report."""
+    return list(report.get("issues") or [])
+
+
+def issue_texts(report: dict) -> list[str]:
+    """Issue texts only, tolerating both dict and legacy string issues."""
+    out: list[str] = []
+    for item in issues(report):
+        out.append(str(item.get("issue", "")) if isinstance(item, dict) else str(item))
+    return out
+
+
 def _as_str_list(value: Any) -> list[str]:
     if value is None:
         return []

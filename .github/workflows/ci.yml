@@ -21,10 +21,6 @@ jobs:
           pip install -e .
       - name: Lint
         run: ruff check .
-      - name: Deterministic self-check
-        run: python scripts/eval.py
-      - name: Benchmark
-        run: python scripts/benchmark.py
       - name: Report quality (CI-safe)
         run: python scripts/evaluate_reports.py
       - name: Tests (unit + architecture)

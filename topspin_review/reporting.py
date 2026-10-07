@@ -10,19 +10,13 @@ import base64
 import html
 from pathlib import Path
 
+from topspin_review.domain import render
 from topspin_review.storage import runtime
-
-
-def _issue_line(issue) -> str:
-    if isinstance(issue, dict):
-        times = ", ".join(str(t) for t in (issue.get("evidence_times") or []))
-        return f"{issue.get('issue', '')} (t={times or '—'}; confidence {issue.get('confidence', '?')})"
-    return str(issue)
 
 
 def to_markdown(report: dict) -> str:
     lines = [
-        f"# Topspin Review report — {Path(report.get('source', '?')).name}",
+        f"# Topspin Review report — {render.video_name(report)}",
         "",
         f"- Sport: {report.get('sport', '')}",
         f"- Date: {report.get('date', '')}",
@@ -39,7 +33,7 @@ def to_markdown(report: dict) -> str:
     issues = report.get("issues") or []
     if issues:
         lines.append("## Issues")
-        lines += [f"- {_issue_line(i)}" for i in issues]
+        lines += [f"- {render.issue_line(i)}" for i in issues]
         lines.append("")
     if report.get("focus"):
         lines += ["## Focus next session", report["focus"], ""]
@@ -54,7 +48,7 @@ def _data_uri(path: str) -> str:
 
 
 def to_html(report: dict) -> str:
-    parts = [f"<h1>Topspin Review — {html.escape(Path(report.get('source', '?')).name)}</h1>"]
+    parts = [f"<h1>Topspin Review — {html.escape(render.video_name(report))}</h1>"]
     parts.append(f"<p><b>{html.escape(report.get('sport', ''))}</b> — {html.escape(report.get('date', ''))}</p>")
     if report.get("summary"):
         parts.append(f"<p>{html.escape(report['summary'])}</p>")
@@ -65,7 +59,7 @@ def to_html(report: dict) -> str:
     issues = report.get("issues") or []
     if issues:
         parts.append(
-            "<h2>Issues</h2><ul>" + "".join(f"<li>{html.escape(_issue_line(i))}</li>" for i in issues) + "</ul>"
+            "<h2>Issues</h2><ul>" + "".join(f"<li>{html.escape(render.issue_line(i))}</li>" for i in issues) + "</ul>"
         )
     if report.get("focus"):
         parts.append(f"<h2>Focus next session</h2><p>{html.escape(report['focus'])}</p>")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from topspin_review.domain import progress
+from topspin_review.domain import progress, report as report_schema
 
 
 def _mechanics(report: dict) -> dict:
@@ -15,8 +15,8 @@ def _mean_energy(report: dict) -> float:
 
 def compare(older: dict, newer: dict) -> dict:
     """Return improved/regressed themes and metric deltas (older -> newer)."""
-    themes_old = progress.classify(" ".join(progress._issues(older)))
-    themes_new = progress.classify(" ".join(progress._issues(newer)))
+    themes_old = progress.classify(" ".join(report_schema.issue_texts(older)))
+    themes_new = progress.classify(" ".join(report_schema.issue_texts(newer)))
 
     improved = sorted(themes_old - themes_new)
     regressed = sorted(themes_new - themes_old)

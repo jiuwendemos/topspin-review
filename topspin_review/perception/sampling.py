@@ -1,15 +1,14 @@
-"""Adaptive, motion-weighted frame sampling with an on-disk cache.
+"""Adaptive, motion-weighted frame sampling.
 
 Even sampling wastes frames on dead time and skips short bursts of action. This
 probes the clip cheaply, then spends the frame budget where the image is actually
 changing (weighted by motion, with a baseline everywhere), so footwork and swing
-moments are more likely to be captured.
+moments are more likely to be captured. Frame caching lives in
+:mod:`topspin_review.storage.cache`.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 
 import imageio
@@ -17,9 +16,7 @@ import numpy as np
 from PIL import Image
 
 from topspin_review import config
-from topspin_review.storage import runtime
-
-_CACHE_VERSION = "v2"
+from topspin_review.storage import cache
 
 
 def _scaled_reader(path: str, width: int = 160, height: int = 90):
@@ -74,58 +71,7 @@ def _select_indices(probe: list[int], energies: list[float], max_frames: int, to
     return sorted(chosen)
 
 
-def _signature(path: Path, max_frames: int) -> str:
-    st = path.stat()
-    raw = f"{_CACHE_VERSION}:{path.resolve()}:{st.st_mtime_ns}:{st.st_size}:{max_frames}:{config.max_seconds()}"
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
-
-
-def _cache_dir(path: Path) -> Path:
-    return runtime.CACHE_DIR / path.stem
-
-
-def _load_cache(path: Path, max_frames: int) -> tuple[dict, list[Image.Image], list[float]] | None:
-    directory = _cache_dir(path)
-    sig_file = directory / "signature.txt"
-    if not sig_file.exists() or sig_file.read_text(encoding="utf-8") != _signature(path, max_frames):
-        return None
-    try:
-        meta = json.loads((directory / "meta.json").read_text(encoding="utf-8"))
-        timestamps = json.loads((directory / "timestamps.json").read_text(encoding="utf-8"))
-        frames = [Image.open(p).convert("RGB") for p in sorted(directory.glob("frame_*.jpg"))]
-    except Exception:
-        return None
-    if not frames:
-        return None
-    return meta, frames, timestamps
-
-
-def _save_cache(path: Path, max_frames: int, meta: dict, frames: list[Image.Image], timestamps: list[float]) -> None:
-    directory = _cache_dir(path)
-    directory.mkdir(parents=True, exist_ok=True)
-    for old in directory.glob("frame_*.jpg"):
-        old.unlink()
-    for i, frame in enumerate(frames):
-        frame.save(directory / f"frame_{i:03d}.jpg", quality=90)
-    (directory / "meta.json").write_text(json.dumps(_jsonable(meta), ensure_ascii=False, indent=2), encoding="utf-8")
-    (directory / "timestamps.json").write_text(json.dumps(timestamps), encoding="utf-8")
-    (directory / "signature.txt").write_text(_signature(path, max_frames), encoding="utf-8")
-
-
-def _jsonable(meta: dict) -> dict:
-    out = {}
-    for key, value in meta.items():
-        try:
-            json.dumps(value)
-            out[key] = value
-        except TypeError:
-            out[key] = str(value)
-    return out
-
-
-def sample_window(
-    video_path: str | Path, start: float, end: float, count: int = 4
-) -> tuple[list[Image.Image], list[float]]:
+def sample_window(video_path: str | Path, start: float, end: float, count: int = 4) -> tuple[list[Image.Image], list[float]]:
     """Sample ``count`` frames evenly inside ``[start, end]`` seconds."""
     path = Path(video_path)
     if not path.exists() or count <= 0:
@@ -182,7 +128,7 @@ def sample_frames(
         raise FileNotFoundError(f"video not found: {path}")
 
     if use_cache:
-        cached = _load_cache(path, max_frames)
+        cached = cache.load(path, max_frames)
         if cached is not None:
             return cached
 
@@ -245,7 +191,7 @@ def sample_frames(
 
     if use_cache and frames:
         try:
-            _save_cache(path, max_frames, meta, frames, timestamps)
+            cache.save(path, max_frames, meta, frames, timestamps)
         except Exception:
             pass
     return meta, frames, timestamps

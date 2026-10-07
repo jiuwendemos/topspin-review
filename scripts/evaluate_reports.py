@@ -16,18 +16,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from topspin_review.domain import (
-    evaluate,  # noqa: E402
+from topspin_review.domain import (  # noqa: E402
+    evaluate,
     progress,
 )
+from topspin_review.domain import report as report_schema  # noqa: E402
 from topspin_review.storage import store
 
 DEFAULT_MIN_SCORE = int(os.getenv("REPORT_MIN_SCORE", "60"))
 
 
 def _themes(report: dict) -> set[str]:
-    text = " ".join(str(i.get("issue", "")) if isinstance(i, dict) else str(i) for i in (report.get("issues") or []))
-    return progress.classify(text)
+    return progress.classify(" ".join(report_schema.issue_texts(report)))
 
 
 def main() -> int:

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
+from topspin_review.domain import report as report_schema
+
 THEMES: dict[str, list[str]] = {
     "footwork": ["foot", "step", "split", "stance", "balance", "weight", "lunge", "shuffle", "step"],
     "stroke": ["swing", "stroke", "forehand", "backhand", "racket", "paddle", "follow-through", "follow through"],
@@ -19,16 +21,6 @@ THEMES: dict[str, list[str]] = {
 }
 
 
-def _issues(report: dict) -> list[str]:
-    out = []
-    for item in report.get("issues") or []:
-        if isinstance(item, dict):
-            out.append(str(item.get("issue", "")))
-        else:
-            out.append(str(item))
-    return out
-
-
 def classify(text: str) -> set[str]:
     lowered = (text or "").lower()
     return {theme for theme, words in THEMES.items() if any(w in lowered for w in words)}
@@ -36,7 +28,7 @@ def classify(text: str) -> set[str]:
 
 def theme_counts(report: dict) -> Counter:
     counts: Counter = Counter()
-    for issue in _issues(report):
+    for issue in report_schema.issue_texts(report):
         for theme in classify(issue):
             counts[theme] += 1
     return counts
@@ -54,12 +46,12 @@ def summarize(reports: list[dict]) -> dict:
             trend[theme].append(counts.get(theme, 0))
 
     latest = reports[-1]
-    latest_themes = classify(" ".join(_issues(latest)))
+    latest_themes = classify(" ".join(report_schema.issue_texts(latest)))
     previous = reports[-2] if len(reports) > 1 else None
-    previous_themes = classify(" ".join(_issues(previous))) if previous else set()
+    previous_themes = classify(" ".join(report_schema.issue_texts(previous))) if previous else set()
     strength_themes = classify(" ".join(latest.get("strengths") or []))
 
-    issue_counts = [len(_issues(r)) for r in reports]
+    issue_counts = [len(report_schema.issue_texts(r)) for r in reports]
     repeated = sorted({t for t, series in trend.items() if sum(1 for v in series if v > 0) >= 2})
 
     # Did last session's focus get addressed?

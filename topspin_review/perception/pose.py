@@ -3,7 +3,7 @@
 Installed via ``requirements.txt`` (``mediapipe``). When available, :func:`estimate`
 returns per-frame joint metrics (knee/elbow angles, stance width); otherwise the
 caller falls back to the dependency-free region proxy in
-:mod:`topspin_review.motion`.
+:mod:`topspin_review.perception.metrics`.
 """
 
 from __future__ import annotations
@@ -46,12 +46,25 @@ _CONNECTIONS = [
 ]
 
 
+def _pose_solution():
+    """Return mediapipe's Pose solution module, or ``None`` if unavailable.
+
+    Newer mediapipe builds no longer expose ``mediapipe.solutions`` unless the
+    legacy submodule is imported explicitly, so probe several import paths and
+    fall back to ``None`` (the region proxy) instead of raising.
+    """
+    for module_path in ("mediapipe.python.solutions.pose", "mediapipe.solutions.pose"):
+        try:
+            module = __import__(module_path, fromlist=["Pose"])
+        except Exception:
+            continue
+        if hasattr(module, "Pose"):
+            return module
+    return None
+
+
 def available() -> bool:
-    try:
-        import mediapipe  # noqa: F401
-    except Exception:
-        return False
-    return True
+    return _pose_solution() is not None
 
 
 def _angle(a, b, c) -> float:
@@ -70,14 +83,17 @@ def _angle(a, b, c) -> float:
 
 def estimate(frames: list[Image.Image]) -> list[dict] | None:
     """Per-frame joint metrics, or ``None`` when mediapipe is unavailable."""
-    if not available():
+    pose_solution = _pose_solution()
+    if pose_solution is None:
         return None
 
-    import mediapipe as mp
+    try:
+        estimator = pose_solution.Pose(static_image_mode=True, model_complexity=1, min_detection_confidence=0.5)
+    except Exception:
+        return None
 
-    pose = mp.solutions.pose
     out: list[dict] = []
-    with pose.Pose(static_image_mode=True, model_complexity=1, min_detection_confidence=0.5) as estimator:
+    with estimator:
         for frame in frames:
             result = estimator.process(np.asarray(frame.convert("RGB")))
             if not result.pose_landmarks:

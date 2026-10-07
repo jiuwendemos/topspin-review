@@ -77,6 +77,13 @@ def recent_reports(n: int = 5) -> list[dict[str, Any]]:
     return get_reports()[-n:]
 
 
+def find_report(video_or_stem: str) -> dict[str, Any] | None:
+    """The stored report for a video path or stem, or ``None``."""
+    stem = Path(video_or_stem).stem
+    matches = [r for r in get_reports() if Path(r.get("source", "")).stem == stem]
+    return matches[-1] if matches else None
+
+
 def patch_last_report(patch: dict[str, Any]) -> dict[str, Any] | None:
     """Merge ``patch`` into the current video's report file."""
     path = _current_report_path()

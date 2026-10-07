@@ -1,4 +1,4 @@
-"""Analyze a session video: measure motion, two-pass vision, then write the report."""
+"""End-to-end analysis pipeline: measure motion, two-pass vision, write the report."""
 
 from __future__ import annotations
 
@@ -7,41 +7,13 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from topspin_review import config
-from topspin_review.analysis import tools, vision
-from topspin_review.analysis import usage as usage_mod
+from topspin_review import config, observability, reporting
+from topspin_review.analysis import prompts, report_agent, vision
+from topspin_review.bootstrap import setup
 from topspin_review.domain import progress
-from topspin_review.perception import ball, motion, pose, sampling, video
-from topspin_review.providers.backends import get_backend
-from topspin_review.reporting import export
+from topspin_review.perception import ball, imaging, metrics, pose, sampling
+from topspin_review.providers import get_backend
 from topspin_review.storage import runtime, store
-
-SYSTEM_PROMPT = """You are Topspin Review. You turn objective, measured observations
-from a time-ordered analysis of a racket-sport session into a practical coaching report.
-
-You have these tools:
-- get_profile(): the player's sport, level, dominant hand, and goal.
-- recent_reports(n): earlier reports, to note progress.
-- save_report(report_json): save the report.
-
-When asked to write a report from observations:
-1. Call get_profile and recent_reports first.
-2. Save the report with save_report using EXACTLY this JSON shape:
-   {"date": "...", "sport": "...", "summary": "...",
-    "strengths": ["...", "..."],
-    "issues": [{"issue": "...", "evidence_times": [2.9, 3.8], "confidence": "high|medium|low"}],
-    "drills": ["...", "..."],
-    "focus": "one thing to work on next session",
-    "progress": "one sentence comparing with the previous report, or '' if none",
-    "limitations": ["...", "..."]}
-3. Put the most impactful issues first. Every issue MUST cite the evidence_times
-   (seconds) it is based on. Use the measured motion metrics and the motion map as
-   evidence; do NOT invent spin, ball speed, or exact angles.
-4. If the observations say the clip is unclear or the frames near-duplicate, say so
-   in "limitations" and keep confidence low.
-5. Reply with a short plain-text summary (do not paste the JSON back).
-"""
-
 
 _runner_started = False
 
@@ -56,21 +28,6 @@ async def _ensure_runner() -> None:
         except Exception:
             pass
         _runner_started = True
-
-
-def build_agent(model=None):
-    from openjiuwen.harness import create_deep_agent
-
-    runtime.setup()
-
-    return create_deep_agent(
-        model=model or config.make_model(),
-        system_prompt=SYSTEM_PROMPT,
-        tools=tools.ALL_TOOLS,
-        enable_task_loop=False,
-        max_iterations=15,
-        workspace=runtime.workspace(),
-    )
 
 
 def _clean_windows(raw: Any, timestamps: list[float], cap: int) -> list[dict]:
@@ -113,33 +70,33 @@ def _save_artifacts(
     video_path: str,
     frames,
     timestamps,
-    metrics: dict,
+    metrics_data: dict,
     region_box: tuple[float, float, float, float] | None = None,
 ) -> dict:
     stem = Path(video_path).stem
     paths: dict[str, str] = {}
-    sheet = video.contact_sheet(frames, timestamps, cols=min(4, len(frames)))
+    sheet = imaging.contact_sheet(frames, timestamps, cols=min(4, len(frames)))
     sheet_path = runtime.ARTIFACTS_DIR / f"{stem}_frames.png"
-    video.save_png(sheet, sheet_path)
+    imaging.save_png(sheet, sheet_path)
     paths["frames"] = str(sheet_path)
 
-    mask = motion.region_from_box(region_box) if region_box else motion.subject_region(frames)
-    mm = motion.motion_map(frames, mask=mask)
+    mask = metrics.region_from_box(region_box) if region_box else metrics.subject_region(frames)
+    mm = metrics.motion_map(frames, mask=mask)
     if mm is not None:
         motion_path = runtime.ARTIFACTS_DIR / f"{stem}_motion.png"
-        video.save_png(mm, motion_path)
+        imaging.save_png(mm, motion_path)
         paths["motion"] = str(motion_path)
 
-    if metrics.get("pose"):
-        annotated = pose.overlay(frames, metrics["pose"])
+    if metrics_data.get("pose"):
+        annotated = pose.overlay(frames, metrics_data["pose"])
         if annotated:
-            pose_sheet = video.contact_sheet(annotated, timestamps, cols=min(4, len(annotated)))
+            pose_sheet = imaging.contact_sheet(annotated, timestamps, cols=min(4, len(annotated)))
             pose_path = runtime.ARTIFACTS_DIR / f"{stem}_pose.png"
-            video.save_png(pose_sheet, pose_path)
+            imaging.save_png(pose_sheet, pose_path)
             paths["pose"] = str(pose_path)
 
     metrics_path = runtime.ARTIFACTS_DIR / f"{stem}_metrics.json"
-    metrics_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    metrics_path.write_text(json.dumps(metrics_data, ensure_ascii=False, indent=2), encoding="utf-8")
     paths["metrics"] = str(metrics_path)
     return paths
 
@@ -154,10 +111,10 @@ async def analyze(
     """
     from openjiuwen.core.runner import Runner
 
-    runtime.setup()
+    setup()
     config.validate()
     if not Path(video_path).exists():
-        raise SystemExit(f"Video not found: {video_path}")
+        raise FileNotFoundError(f"Video not found: {video_path}")
 
     await _ensure_runner()
     store.set_current_video(video_path)
@@ -165,20 +122,18 @@ async def analyze(
 
     meta, frames, timestamps = sampling.sample_frames(video_path, config.max_frames(), config.use_cache())
     if not frames:
-        raise SystemExit("No frames could be extracted from the video.")
+        raise ValueError("No frames could be extracted from the video.")
 
-    steps = motion.activity(frames, timestamps)
+    steps = metrics.activity(frames, timestamps)
     ball_info = ball.detect(frames, timestamps, steps)
-    metrics = motion.analyze(frames, timestamps, ball=ball_info, region_box=region_box)
-    artifact_paths = _save_artifacts(video_path, frames, timestamps, metrics, region_box)
+    measured = metrics.analyze(frames, timestamps, ball=ball_info, region_box=region_box)
+    artifact_paths = _save_artifacts(video_path, frames, timestamps, measured, region_box)
 
     backend = get_backend()
-    coarse_out = await vision.coarse(meta, frames, timestamps, metrics, profile, backend=backend)
+    coarse_out = await vision.coarse(meta, frames, timestamps, measured, profile, backend=backend)
     windows = _clean_windows(coarse_out.get("attentive_windows"), timestamps, config.max_windows())
     zoom_frames, zoom_times = _zoom_frames(video_path, windows, config.zoom_frames())
-    fine_out = await vision.fine(
-        frames, timestamps, metrics, windows, zoom_frames, zoom_times, profile, backend=backend
-    )
+    fine_out = await vision.fine(frames, timestamps, measured, windows, zoom_frames, zoom_times, profile, backend=backend)
     observations = vision.observations_text(coarse_out, fine_out)
 
     prev_progress = progress.summarize(store.get_reports())
@@ -187,8 +142,8 @@ async def analyze(
 
     window_label = ", ".join(f"{w['start']}-{w['end']}s" for w in windows) or "none"
 
-    text_usage = usage_mod.UsageCollector()
-    agent = build_agent(model=usage_mod.attach(config.make_model(), text_usage))
+    text_usage = observability.UsageCollector()
+    agent = report_agent.build_agent(model=observability.attach(config.make_model(), text_usage))
     query = (
         f"Today is {date.today().isoformat()}. "
         f"Write my coaching report for a {profile.get('sport', 'table tennis')} session.\n"
@@ -198,7 +153,7 @@ async def analyze(
         f"History: {progress_note}" + (f" Recurring themes: {repeated}." if repeated else "") + "\n\n"
         f"Analysis ({len(frames)} sampled frames, windows examined: {window_label}):\n"
         f"{observations}\n\n"
-        f"Measured motion/mechanics:\n{motion.metrics_text(metrics)}\n\n"
+        f"Measured motion/mechanics:\n{prompts.metrics_text(measured)}\n\n"
         "Save the report with save_report (schema with evidence_times and confidence), "
         "then give me a short summary."
     )
@@ -216,7 +171,7 @@ async def analyze(
     report = store.patch_last_report(
         {
             "observations": observations,
-            "metrics": metrics,
+            "metrics": measured,
             "windows": windows,
             "signals": fine_out.get("signals") or [],
             "source": str(video_path),
@@ -231,7 +186,7 @@ async def analyze(
     if report:
         trend = progress.summarize(store.get_reports())
         try:
-            exports = export.write(report)
+            exports = reporting.write(report)
         except Exception:
             exports = {}
         report = store.patch_last_report({"progress_trend": trend, "exports": exports})

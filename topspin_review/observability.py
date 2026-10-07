@@ -6,7 +6,6 @@ from typing import Any
 
 _KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
 
-
 _ALIASES = {
     "prompt_tokens": ("prompt_tokens", "input_tokens"),
     "completion_tokens": ("completion_tokens", "output_tokens"),

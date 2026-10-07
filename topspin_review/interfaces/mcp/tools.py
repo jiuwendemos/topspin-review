@@ -6,36 +6,16 @@ import json
 
 from openjiuwen.core.foundation.tool import tool
 
-from topspin_review.interfaces.service import analyze_video_sync
+from topspin_review.interfaces import service
+
+_SPEC = service.describe()
 
 
-@tool(
-    name="analyze_sport_video",
-    description=(
-        "Analyze a racket-sport session video and return a coaching report "
-        "(strengths, issues with evidence timestamps and confidence, drills, focus)."
-    ),
-    input_params={
-        "type": "object",
-        "properties": {
-            "video_path": {"type": "string", "description": "Path to a video file."},
-            "region_box": {
-                "type": "array",
-                "items": {"type": "number"},
-                "description": "Optional normalized player region [left, top, right, bottom] in 0..1.",
-            },
-        },
-        "required": ["video_path"],
-    },
-)
+@tool(name=_SPEC["name"], description=_SPEC["description"], input_params=_SPEC["input_params"])
 def analyze_sport_video(video_path: str, region_box: list[float] | None = None) -> str:
-    box = tuple(region_box) if region_box and len(region_box) == 4 else None
-    result = analyze_video_sync(video_path, region_box=box)
+    result = service.analyze_video_sync(video_path, region_box=service.parse_region_box(region_box))
     report = result.get("report") or {}
-    return json.dumps(
-        {"report_path": result.get("report_path"), "report": report},
-        ensure_ascii=False,
-    )
+    return json.dumps({"report_path": result.get("report_path"), "report": report}, ensure_ascii=False)
 
 
 ALL_TOOLS = [analyze_sport_video]

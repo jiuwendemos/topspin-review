@@ -259,38 +259,3 @@ def analyze(
         if steps
         else [0.0, 0.0],
     }
-
-
-def metrics_text(metrics: dict) -> str:
-    """Render metrics as compact text for the vision prompt."""
-    net = metrics.get("net_shift", [0, 0])
-    lines = [
-        f"- overall motion: mean energy {metrics.get('mean_energy')}, "
-        f"peak {metrics.get('max_energy')} at t={metrics.get('peak_motion_time')}s, "
-        f"net shift (dx,dy)=({net[0]}, {net[1]}) px"
-    ]
-    steps = metrics.get("activity") or []
-    if steps:
-        rendered = "; ".join(f"t={s['t']}s E={s['energy']} shift=({s['dx']},{s['dy']})" for s in steps)
-        lines.append(f"- activity timeline: {rendered}")
-    post = metrics.get("posture") or {}
-    if post:
-        lines.append(
-            "- subject box: mean height {box_height_mean} width {box_width_mean} (aspect {aspect_mean}), "
-            "lateral drift {lateral_range}".format(**post)
-        )
-    mech = metrics.get("mechanics") or {}
-    if mech:
-        lines.append(
-            "- mechanics: lower-body lateral range {lower_lateral_range}, direction changes "
-            "(step proxy) {lower_direction_changes}, upper-body lateral range {upper_lateral_range}, "
-            "crouch change {crouch_box_range}".format(**mech)
-        )
-    ball = metrics.get("ball") or {}
-    if ball:
-        lines.append(f"- ball (heuristic): {ball.get('summary', 'n/a')}")
-    pose_summary = metrics.get("pose_summary") or {}
-    if pose_summary:
-        rendered = ", ".join(f"{k}={v}" for k, v in pose_summary.items())
-        lines.append(f"- pose joints (degrees/normalized): {rendered}")
-    return "\n".join(lines)

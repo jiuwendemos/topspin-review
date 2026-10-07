@@ -9,6 +9,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+class ConfigError(RuntimeError):
+    """Raised when required configuration is missing or invalid."""
+
+
+def vision_backend() -> str:
+    """Selected vision backend name (``openai`` or ``mock``)."""
+    return os.getenv("VISION_BACKEND", "openai")
+
+
 def _bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -91,7 +100,7 @@ def llm_timeout() -> float:
 def validate() -> None:
     missing = [k for k in ("API_KEY", "API_BASE", "MODEL_NAME") if not os.getenv(k)]
     if missing:
-        raise SystemExit(
+        raise ConfigError(
             "Missing required environment variables: "
             + ", ".join(missing)
             + ".\nCopy .env.example to .env and fill it in."

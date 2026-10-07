@@ -1,6 +1,4 @@
 {
-  "_comment": "Map a video stem to expectations. 'themes' must all appear in the report's issues; 'min_score' is the evaluate.score floor. Add real clips as you record them.",
-  "examples": {
-    "video11": {"themes": ["footwork"], "min_score": 60}
-  }
+  "_comment": "Map a video stem to expectations. Each entry: {\"themes\": [...], \"min_score\": N}. 'themes' must all appear in the report's issues; 'min_score' is the evaluate.score floor. Add real clips as you record them.",
+  "video11": {"themes": ["footwork"], "min_score": 60}
 }
