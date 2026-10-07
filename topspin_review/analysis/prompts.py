@@ -72,6 +72,39 @@ When asked to write a report from observations:
 """
 
 
+RUBRICS: dict[str, list[str]] = {
+    "table tennis": ["ready stance and balance", "split-step on the opponent's contact",
+                     "footwork / stepping into the ball", "weight transfer into the stroke",
+                     "stroke preparation (early, compact)", "recovery to ready between shots"],
+    "tennis": ["ready stance and balance", "split-step", "unit turn and footwork",
+               "weight transfer / loaded legs", "preparation and take-back", "recovery"],
+    "badminton": ["ready stance and balance", "split-step", "footwork / lunging",
+                  "weight transfer", "racket preparation", "recovery to base"],
+    "squash": ["ready stance and balance", "split-step", "movement to the T",
+               "weight transfer", "racket preparation", "recovery"],
+    "padel": ["ready stance and balance", "split-step", "footwork at the net",
+              "weight transfer", "racket preparation", "recovery"],
+}
+
+
+def rubric_text(sport: str, language: str = "en") -> str:
+    criteria = RUBRICS.get((sport or "").strip().lower(), RUBRICS["table tennis"])
+    return "\n".join(f"- {c}" for c in criteria)
+
+
+VERIFY_PROMPT = """You are checking a coaching report against the evidence.
+
+Issues drafted:
+{issues}
+
+What the measurements and observations actually show:
+{evidence}
+
+Return ONLY JSON: {{"supported": [list of issue indices, 0-based, that the evidence supports],
+"unsupported_reasons": {{"<index>": "why"}}}}
+Be strict: an issue with no supporting evidence or evidence times must be dropped."""
+
+
 def metrics_text(metrics: dict) -> str:
     """Render metrics as compact text for the vision/prompt layer."""
     net = metrics.get("net_shift", [0, 0])

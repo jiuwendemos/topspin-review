@@ -75,6 +75,21 @@ def max_windows() -> int:
     return int(os.getenv("VISION_MAX_WINDOWS", "3"))
 
 
+def zoom_fps() -> float:
+    """Target frames-per-second when sampling a zoom burst inside a window."""
+    return float(os.getenv("VISION_ZOOM_FPS", "8"))
+
+
+def verify_reports() -> bool:
+    """Run a verification pass that drops unsupported issues."""
+    return _bool("VERIFY_REPORTS", "true")
+
+
+def clips_enabled() -> bool:
+    """Cut short highlight clips around flagged moments."""
+    return _bool("HIGHLIGHT_CLIPS", "true")
+
+
 def use_cache() -> bool:
     return _bool("VISION_CACHE", "true")
 

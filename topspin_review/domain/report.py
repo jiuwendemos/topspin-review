@@ -12,6 +12,21 @@ from typing import Any
 CONFIDENCE = {"high", "medium", "low"}
 
 
+_CONF_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
+def calibrate(report: dict, quality: dict | None) -> dict:
+    """Cap issue confidence according to footage quality (measurement, not vibes)."""
+    score = int((quality or {}).get("score", 100))
+    cap = "low" if score < 40 else "medium" if score < 70 else "high"
+    for issue in report.get("issues") or []:
+        if isinstance(issue, dict):
+            conf = issue.get("confidence", "low")
+            if _CONF_ORDER.get(conf, 0) > _CONF_ORDER[cap]:
+                issue["confidence"] = cap
+    return report
+
+
 def issues(report: dict) -> list[Any]:
     """Raw issue entries (dicts or legacy strings) from a report."""
     return list(report.get("issues") or [])

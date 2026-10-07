@@ -119,6 +119,47 @@ def sample_window(video_path: str | Path, start: float, end: float, count: int =
         reader.close()
 
 
+def sample_burst(
+    video_path: str | Path, start: float, end: float, target_fps: float = 8.0, cap: int = 20
+) -> tuple[list[Image.Image], list[float]]:
+    """Sample ``[start, end]`` at ~``target_fps`` (denser than sample_window)."""
+    path = Path(video_path)
+    if not path.exists():
+        return [], []
+
+    reader = imageio.get_reader(str(path), format="ffmpeg")
+    try:
+        try:
+            meta = dict(reader.get_meta_data())
+        except Exception:
+            meta = {}
+        fps = float(meta.get("fps") or 30)
+        total = int(reader.count_frames()) if not meta.get("duration") else 0
+
+        lo = max(0, int(round(float(start) * fps)))
+        hi = int(round(float(end) * fps))
+        if hi <= lo:
+            hi = lo + 1
+        if total:
+            lo = min(lo, total - 1)
+            hi = min(max(hi, lo + 1), total)
+
+        step = max(1, int(round(fps / max(float(target_fps), 0.5))))
+        indices = list(range(lo, hi + 1, step))[:cap]
+
+        frames: list[Image.Image] = []
+        times: list[float] = []
+        for idx in indices:
+            try:
+                frames.append(Image.fromarray(reader.get_data(idx)).convert("RGB"))
+                times.append(idx / fps)
+            except Exception:
+                continue
+        return frames, times
+    finally:
+        reader.close()
+
+
 def sample_frames(
     video_path: str | Path, max_frames: int = 12, use_cache: bool = True
 ) -> tuple[dict, list[Image.Image], list[float]]:

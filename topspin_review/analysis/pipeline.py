@@ -10,11 +10,14 @@ from typing import Any
 from topspin_review import config, observability, reporting
 from topspin_review.analysis import prompts, report_agent, retrieval, vision
 from topspin_review.analysis import rails as rails_mod
+from topspin_review.analysis import verify as verify_mod
 from topspin_review.analysis.progress import Progress, tick
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
-from topspin_review.perception import ball, imaging, metrics, pose, sampling
+from topspin_review.domain import report as report_schema
+from topspin_review.perception import ball, imaging, metrics, pose, quality, sampling
 from topspin_review.providers import get_backend
+from topspin_review.reporting import clips as clips_mod
 from topspin_review.storage import runtime, store
 
 _runner_started = False
@@ -57,7 +60,7 @@ def _zoom_frames(video_path: str, windows: list[dict], budget: int) -> tuple[lis
     frames: list = []
     times: list[float] = []
     for w in windows:
-        f, t = sampling.sample_window(video_path, w["start"], w["end"], per)
+        f, t = sampling.sample_burst(video_path, w["start"], w["end"], config.zoom_fps(), cap=per)
         frames.extend(f)
         times.extend(t)
     if len(frames) > budget:
@@ -134,6 +137,7 @@ async def analyze(
     steps = metrics.activity(frames, timestamps)
     ball_info = ball.detect(frames, timestamps, steps)
     measured = metrics.analyze(frames, timestamps, ball=ball_info, region_box=region_box)
+    clip_quality = quality.evaluate(meta, frames, measured)
 
     tick(progress, "writing artifacts", 30)
     artifact_paths = _save_artifacts(video_path, frames, timestamps, measured, region_box)
@@ -159,6 +163,16 @@ async def analyze(
 
     window_label = ", ".join(f"{w['start']}-{w['end']}s" for w in windows) or "none"
 
+    rubric = prompts.rubric_text(profile.get("sport", "table tennis"))
+    baseline = ""
+    if all_reports:
+        prev_mech = (all_reports[-1].get("metrics") or {}).get("mechanics") or {}
+        now_mech = measured.get("mechanics") or {}
+        if prev_mech or now_mech:
+            deltas = {k: round(float(now_mech.get(k, 0)) - float(prev_mech.get(k, 0)), 3) for k in set(prev_mech) | set(now_mech)}
+            baseline = f"Previous mechanics: {prev_mech}\nNow: {now_mech}\nChange: {deltas}"
+    quality_note = "; ".join(clip_quality.get("warnings") or []) or "ok"
+
     tick(progress, "writing report", 72)
     trace = observability.CallbackTrace()
     trace_on = config.trace_callbacks() and trace.install()
@@ -180,6 +194,9 @@ async def analyze(
         f"Analysis ({len(frames)} sampled frames, windows examined: {window_label}):\n"
         f"{observations}\n\n"
         f"Measured motion/mechanics:\n{prompts.metrics_text(measured)}\n\n"
+        f"Footage quality: {quality_note}.\n\n"
+        + (f"Baseline (previous session):\n{baseline}\n\n" if baseline else "")
+        + f"Check the player against this technique rubric (issues should map to it):\n{rubric}\n\n"
         "Save the report with save_report (schema with evidence_times and confidence), "
         "then give me a short summary."
     )
@@ -213,13 +230,41 @@ async def analyze(
     )
 
     if report:
+        tick(progress, "verifying", 95)
+        report_schema.calibrate(report, clip_quality)
+        if config.verify_reports():
+            try:
+                await verify_mod.verify(report, observations, prompts.metrics_text(measured))
+            except Exception:
+                pass
+
+        clips: dict = {}
+        if config.clips_enabled():
+            clip_times: list[float] = []
+            for item in (report.get("issues") or [])[:3]:
+                if isinstance(item, dict):
+                    clip_times.extend(item.get("evidence_times") or [])
+            try:
+                clips = clips_mod.make_clips(str(video_path), clip_times, Path(video_path).stem)
+            except Exception:
+                clips = {}
+
         tick(progress, "exporting", 97)
         trend = domain_progress.summarize(store.get_reports())
+        limitations = list(report.get("limitations") or []) + list(clip_quality.get("warnings") or [])
         try:
             exports = reporting.write(report)
         except Exception:
             exports = {}
-        report = store.patch_last_report({"progress_trend": trend, "exports": exports})
+        report = store.patch_last_report(
+            {
+                "progress_trend": trend,
+                "exports": exports,
+                "quality": clip_quality,
+                "clips": clips,
+                "limitations": limitations,
+            }
+        )
 
     tick(progress, "done", 100)
 
