@@ -12,11 +12,11 @@ import argparse
 import sys
 
 from topspin_review import config
+from topspin_review import reporting as export
 from topspin_review.bootstrap import run as run_async
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import render
-from topspin_review import reporting as export
 from topspin_review.storage import runtime, store
 
 for _stream in (sys.stdout, sys.stderr):

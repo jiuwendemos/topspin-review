@@ -7,7 +7,8 @@ package itself does nothing (no side effects). ``setup`` is idempotent.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Coroutine, TypeVar
+from collections.abc import Coroutine
+from typing import Any, TypeVar
 
 from .storage import runtime
 

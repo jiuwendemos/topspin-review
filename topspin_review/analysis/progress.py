@@ -50,7 +50,7 @@ class Progress:
             }
 
 
-def tick(progress: "Progress | None", stage: str, pct: float, detail: str = "") -> None:
+def tick(progress: Progress | None, stage: str, pct: float, detail: str = "") -> None:
     """Update ``progress`` if present; never raises."""
     if progress is not None:
         try:

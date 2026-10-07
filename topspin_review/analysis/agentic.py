@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from topspin_review import config, reporting
-from topspin_review.analysis import prompts, rails as rails_mod
+from topspin_review.analysis import prompts, vision
+from topspin_review.analysis import rails as rails_mod
 from topspin_review.analysis import tools as report_tools
-from topspin_review.analysis import vision
 from topspin_review.analysis.progress import Progress, tick
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress

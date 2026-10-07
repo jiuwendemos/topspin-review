@@ -157,7 +157,6 @@ def _page_home() -> None:
         _open(Path(latest.get("source", "")).stem)
 
     st.markdown("### Recent sessions")
-    names = [render.video_name(r) for r in reports]
     for report in reversed(reports[-6:]):
         c1, c2 = st.columns([4, 1])
         c1.markdown(f"**{render.video_name(report)}**  \n{report.get('date', '')} — {report.get('focus', '')}")

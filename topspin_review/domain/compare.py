@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from topspin_review.domain import progress, report as report_schema
+from topspin_review.domain import progress
+from topspin_review.domain import report as report_schema
 
 
 def _mechanics(report: dict) -> dict:

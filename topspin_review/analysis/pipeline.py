@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from topspin_review import config, observability, reporting
-from topspin_review.analysis import prompts, rails as rails_mod, report_agent, retrieval, vision
+from topspin_review.analysis import prompts, report_agent, retrieval, vision
+from topspin_review.analysis import rails as rails_mod
 from topspin_review.analysis.progress import Progress, tick
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
