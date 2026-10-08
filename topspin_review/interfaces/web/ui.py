@@ -17,6 +17,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from topspin_review import observability
 from topspin_review import reporting as export
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
@@ -28,6 +29,179 @@ setup()
 SPORTS = ["table tennis", "tennis", "badminton", "squash", "padel"]
 LEVELS = ["beginner", "intermediate", "advanced"]
 HANDS = ["right", "left"]
+
+_STYLE = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: rgba(15, 23, 42, 0.08);
+    --card: #ffffff;
+    --accent: #4f46e5;
+    --accent-soft: rgba(79, 70, 229, 0.10);
+    --radius: 18px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -16px rgba(16, 24, 40, 0.22);
+}
+
+html, body, [class*="css"], .stApp, button, input, textarea, select {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.stApp {
+    background:
+        radial-gradient(1200px 480px at 100% -10%, rgba(79, 70, 229, 0.10), transparent 60%),
+        radial-gradient(900px 420px at -10% 10%, rgba(14, 165, 233, 0.08), transparent 55%),
+        #f6f7fb;
+}
+
+.block-container { max-width: 1080px; padding-top: 2.4rem; padding-bottom: 4rem; }
+
+h1, h2, h3, h4 { letter-spacing: -0.02em; color: var(--ink); font-weight: 700; }
+h1 { font-weight: 800; }
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background: #ffffff;
+    border-right: 1px solid var(--line);
+}
+[data-testid="stSidebarNav"] a { border-radius: 12px; }
+
+/* Metric cards */
+[data-testid="stMetric"] {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+[data-testid="stMetric"]:hover { transform: translateY(-2px); }
+[data-testid="stMetricLabel"] p {
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-size: .70rem !important;
+    font-weight: 600 !important;
+    color: var(--muted) !important;
+}
+[data-testid="stMetricValue"] { font-size: 1.85rem; font-weight: 700; letter-spacing: -0.02em; }
+
+/* Section hero */
+.tech-hero { margin: 0 0 1rem 0; }
+.tech-hero h2 { margin: 0; font-size: 1.6rem; }
+.tech-hero p { margin: .2rem 0 0; color: var(--muted); font-size: .92rem; }
+
+.section-label {
+    display: inline-flex; align-items: center; gap: .5rem;
+    text-transform: uppercase; letter-spacing: .09em; font-size: .70rem;
+    font-weight: 700; color: var(--accent);
+    background: var(--accent-soft);
+    padding: .32rem .6rem; border-radius: 999px;
+    margin: 0 0 .5rem 0;
+}
+
+/* Expanders as cards */
+[data-testid="stExpander"] {
+    border: 1px solid var(--line) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.03) !important;
+    overflow: hidden;
+    background: var(--card);
+    margin-bottom: .5rem;
+}
+[data-testid="stExpander"] summary { font-weight: 600; padding: .75rem 1rem; }
+[data-testid="stExpander"] summary:hover { background: #f8fafc; }
+
+/* Tabs: transparent, underline for the active one */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 1.4rem;
+    background: transparent;
+    border-bottom: 1px solid var(--line);
+}
+.stTabs [data-baseweb="tab"] {
+    height: auto;
+    padding: .5rem .15rem;
+    background: transparent !important;
+    border-radius: 0;
+    font-weight: 600;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+}
+.stTabs [data-baseweb="tab"]:hover { background: transparent !important; color: var(--ink); }
+.stTabs [aria-selected="true"] {
+    background: transparent !important;
+    color: var(--accent) !important;
+    border-bottom: 2px solid var(--accent);
+}
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display: none; }
+.stTabs [data-baseweb="tab"] > div { background: transparent !important; }
+
+/* Tables */
+[data-testid="stTable"] table, [data-testid="stDataFrame"] {
+    border-radius: 14px; overflow: hidden; border: 1px solid var(--line);
+}
+[data-testid="stTable"] thead th {
+    background: #f8fafc !important; text-transform: uppercase;
+    letter-spacing: .05em; font-size: .68rem; color: var(--muted) !important;
+}
+[data-testid="stTable"] tbody tr:hover { background: #f8fafc; }
+
+/* Code */
+pre, [data-testid="stCode"] pre {
+    border-radius: 12px !important;
+    border: 1px solid var(--line) !important;
+    background: #0f172a0a !important;
+}
+
+/* Buttons */
+.stButton > button, .stDownloadButton > button {
+    border-radius: 12px !important; font-weight: 600 !important;
+    border: 1px solid var(--line) !important;
+    transition: transform .12s ease, box-shadow .12s ease;
+}
+.stButton > button:hover, .stDownloadButton > button:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+.stButton > button[kind="primary"] { background: var(--accent) !important; border-color: var(--accent) !important; }
+
+/* Alerts */
+[data-testid="stAlert"] { border-radius: 14px; }
+
+hr { border-color: var(--line); }
+
+/* Timeline */
+.tl-stage {
+    display: flex; justify-content: space-between; align-items: center;
+    margin: 1.1rem 0 .4rem; font-weight: 700; color: var(--ink);
+    padding-bottom: .35rem; border-bottom: 1px solid var(--line);
+}
+.tl-note { color: var(--muted); font-size: .85rem; margin: .1rem 0 .35rem 1.5rem; font-style: italic; }
+.tl-time {
+    text-align: right; color: var(--muted); font-weight: 600;
+    font-variant-numeric: tabular-nums; padding-top: .62rem; font-size: .85rem;
+}
+
+/* Inline token badge */
+.badge {
+    display: inline-block; padding: .12rem .5rem; border-radius: 999px;
+    background: #eef1f7; color: var(--muted); font-size: .72rem; font-weight: 600;
+}
+</style>
+"""
+
+
+def _inject_style() -> None:
+    st.markdown(_STYLE, unsafe_allow_html=True)
+
+
+def _hero(title: str, subtitle: str = "") -> None:
+    st.markdown(
+        f"<div class='tech-hero'><h2>{title}</h2>" + (f"<p>{subtitle}</p>" if subtitle else "") + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _section(label: str) -> None:
+    st.markdown(f"<div class='section-label'>{label}</div>", unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -74,7 +248,16 @@ def _poll_job() -> None:
     if proc.poll() is None:
         pct = min(max(float(snap.get("pct") or 0.0), 0.0), 100.0)
         elapsed = time.monotonic() - float(job.get("start", time.monotonic()))
-        st.progress(pct / 100.0, text=f"Analyzing… {snap.get('stage', 'starting')} ({int(pct)}%) · {elapsed:.0f}s")
+        bar_col, stop_col = st.columns([6, 1], vertical_alignment="bottom")
+        bar_col.progress(pct / 100.0, text=f"Analyzing… {snap.get('stage', 'starting')} ({int(pct)}%) · {elapsed:.0f}s")
+        if stop_col.button("Stop", key="stop_analysis"):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            st.session_state.pop("job", None)
+            st.session_state["job_error"] = "Analysis stopped."
+            st.rerun()
         time.sleep(0.5)
         st.rerun()
     st.session_state.pop("job", None)
@@ -139,7 +322,8 @@ def _open(stem: str) -> None:
 
 
 def _prelude() -> None:
-    """Runs at the top of every page: show errors, poll the job."""
+    """Runs at the top of every page: inject style, show errors, poll the job."""
+    _inject_style()
     if st.session_state.get("job_error"):
         st.error(f"Analysis failed: {st.session_state.pop('job_error')}")
     _poll_job()
@@ -199,8 +383,7 @@ def _ask_panel() -> None:
 # --------------------------------------------------------------------------- #
 def _page_sessions() -> None:
     _prelude()
-    st.title("Sessions")
-    st.caption("Every video or photo you've analyzed. Pick one to open, or analyze a new one.")
+    _hero("Sessions", "Every video or photo you've analyzed — open one or analyze a new clip.")
 
     reports = store.get_reports()
     if st.button("Analyze a new video or photo", type="primary"):
@@ -244,8 +427,10 @@ def _page_sessions() -> None:
 # --------------------------------------------------------------------------- #
 def _page_analyze() -> None:
     _prelude()
-    st.title("Analyze a video or photo")
-    st.caption("A few rallies from the side (full body) gives the most; a single photo gives posture feedback.")
+    _hero(
+        "Analyze a video or photo",
+        "A few rallies from the side (full body) gives the most; a single photo gives posture feedback.",
+    )
 
     uploaded = st.file_uploader(
         "Choose a video or a single photo", type=["mp4", "mov", "avi", "mkv", "png", "jpg", "jpeg", "bmp", "webp"]
@@ -327,8 +512,7 @@ def _page_result() -> None:
             _go("Analyze")
         return
 
-    st.subheader(render.video_name(latest))
-    st.caption(f"{latest.get('sport', '')} · {latest.get('date', '')}")
+    _hero(render.video_name(latest), f"{latest.get('sport', '')} · {latest.get('date', '')}")
 
     tab_report, tab_movement, tab_details, tab_technical = st.tabs(["Report", "Movement", "Details", "Technical"])
 
@@ -432,145 +616,149 @@ def _page_result() -> None:
         )
 
     with tab_technical:
-        st.caption("How this report was produced — model calls and timings.")
         usage = latest.get("usage") or {}
-        if usage:
-            text_u = usage.get("text") or {}
-            vision_u = usage.get("vision") or {}
-            model_secs = float(text_u.get("seconds", 0) or 0) + float(vision_u.get("seconds", 0) or 0)
+        artifacts = latest.get("artifacts") or {}
+        models = usage.get("models") or {}
+        stats = observability.summary_stats(usage)
+
+        _section("Overview")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Model calls", stats["calls"])
+        c2.metric(
+            "Tokens billed",
+            f"{stats['total_tokens']:,}",
+            help=f"{stats['context_tokens']:,} context + {stats['output_tokens']:,} output",
+        )
+        c3.metric("From cache", f"{stats['cached_tokens']:,}")
+        c4.metric("Model time", f"{stats['model_seconds']:.0f}s")
+        if models:
             st.caption(
-                f"Model usage: {usage.get('calls', 0)} calls · {usage.get('total_tokens', 0)} tokens · "
-                f"{model_secs:.0f}s inside model calls "
-                f"(text {float(text_u.get('seconds', 0) or 0):.0f}s / vision {float(vision_u.get('seconds', 0) or 0):.0f}s)"
+                f"Text model: {models.get('text', '?')} · Vision model: {models.get('vision', '?')} · "
+                f"{models.get('provider', '?')} ({models.get('api_base', '')})"
             )
-            models = usage.get("models") or {}
-            if models:
-                st.caption(
-                    f"Text model: {models.get('text', '?')} · Vision model: {models.get('vision', '?')} · "
-                    f"Provider: {models.get('provider', '?')} ({models.get('api_base', '')})"
-                )
-            vc = usage.get("vision_calls") or []
-            tc = usage.get("text_calls") or []
-            ctx = sum(int(c.get("prompt_tokens", 0) or 0) for c in vc + tc)
-            gen = sum(int(c.get("completion_tokens", 0) or 0) for c in vc + tc)
-            cached = sum(int(c.get("cached_tokens", 0) or 0) for c in vc + tc)
-            st.caption(
-                f"Tokens billed: {ctx + gen} total = {ctx} context/input + {gen} output"
-                + (f" · {cached} served from cache" if cached else "")
-                + f", across {len(vc) + len(tc)} calls. The whole context is re-sent on every call, "
-                "so each call's input already includes all prior messages."
-            )
-        timings = latest.get("timings") or []
-        if timings:
-            import pandas as pd
 
-            text_calls = usage.get("text_calls") or []
-            vision_calls = usage.get("vision_calls") or []
-            agent_stages = ("agent writing report", "agent: analyzing")
-            vision_stage = {
-                "overview": "vision: overview",
-                "detail": "vision: detail",
-                "reviewing image": "vision: reviewing image",
-            }
-
-            children: dict[str, list[dict]] = {}
-            for call in vision_calls:
-                pin = int(call.get("prompt_tokens", 0) or 0)
-                pout = int(call.get("completion_tokens", 0) or 0)
-                cached = int(call.get("cached_tokens", 0) or 0)
-                cache_note = f", {cached} cached" if cached else ""
-                stage = vision_stage.get(call.get("label") or "", "__agent__")
-                children.setdefault(stage, []).append(
-                    {
-                        "what": f"    ↳ vision model call ({pin} context{cache_note} + {pout} out)",
-                        "seconds": float(call.get("seconds", 0) or 0),
-                    }
-                )
-            for stage in agent_stages:
-                if "__agent__" in children:
-                    children.setdefault(stage, []).extend(children.pop("__agent__"))
-
-            rows: list[dict] = []
-            for entry in timings:
-                stage = entry.get("stage", "")
-                secs = float(entry.get("seconds", 0) or 0)
-                rows.append({"what": stage, "seconds": f"{secs:.2f}"})
-                nested = list(children.get(stage, []))
-                if stage in agent_stages:
-                    for i, call in enumerate(text_calls, start=1):
-                        pin = int(call.get("prompt_tokens", 0) or 0)
-                        pout = int(call.get("completion_tokens", 0) or 0)
-                        cached = int(call.get("cached_tokens", 0) or 0)
-                        cache_note = f", {cached} cached" if cached else ""
-                        nested.append(
-                            {
-                                "what": f"    ↳ model call {i} ({pin} context{cache_note} + {pout} out)",
-                                "seconds": float(call.get("seconds", 0) or 0),
-                            }
-                        )
-                    model_secs = sum(r["seconds"] for r in nested)
-                    nested.append(
-                        {
-                            "what": "    ↳ agent overhead (tool calls, prompt building)",
-                            "seconds": max(0.0, secs - model_secs),
-                        }
-                    )
-                rows.extend({"what": r["what"], "seconds": f"{r['seconds']:.2f}"} for r in nested)
-            st.markdown("**Where the time went**")
-            st.caption("Every step in order; each model call is nested under the step that made it.")
-            st.table(pd.DataFrame(rows))
-
-        calls_path = (latest.get("artifacts") or {}).get("calls")
-        if calls_path and Path(calls_path).exists():
+        def _load_artifact(path_str):
+            if not path_str:
+                return None
             try:
-                calls = json.loads(Path(calls_path).read_text(encoding="utf-8"))
+                path = Path(path_str)
+                return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
             except (OSError, ValueError):
-                calls = []
-            if calls:
-                st.markdown("**Model calls in full**")
-                st.caption(
-                    "The exact context sent to the model (images shown as [image]) and the raw output. "
-                    "This is the full, untruncated text."
-                )
+                return None
+
+        obs_data = _load_artifact(artifacts.get("observability")) or {}
+        calls = obs_data.get("calls") or []
+        called_tools = obs_data.get("tools") or []
+        if not calls or not called_tools:
+            legacy_calls = _load_artifact(artifacts.get("calls"))
+            legacy_tools = _load_artifact(artifacts.get("tools"))
+            if not calls and isinstance(legacy_calls, list):
+                calls = legacy_calls
+            if not called_tools and isinstance(legacy_tools, list):
+                called_tools = legacy_tools
+
+        timeline = observability.build_timeline(usage, latest.get("timings"), calls=calls, tools=called_tools)
+        if timeline:
+            st.divider()
+            _section("Execution")
+            ordered = any(r.get("seq") for r in timeline if r.get("kind") in ("model", "tool"))
+            if ordered:
+                st.caption("Ordered by the exact sequence in which each model/tool call started.")
+            elif any(r.get("kind") in ("model", "tool") for r in timeline):
+                st.caption("⚠ This report predates event timestamps — call order is not guaranteed. Re-analyze for the true sequence.")
+            if calls or called_tools:
                 st.download_button(
-                    "Download all calls (JSON)",
-                    json.dumps(calls, ensure_ascii=False, indent=2),
-                    file_name="model_calls.json",
+                    "Download run details (JSON)",
+                    json.dumps({"calls": calls, "tools": called_tools}, ensure_ascii=False, indent=2),
+                    file_name="run_details.json",
                     mime="application/json",
                 )
-                for i, call in enumerate(calls, start=1):
-                    model = call.get("model") or ""
-                    title = f"Call {i} — {call.get('label', '')}" + (f" · {model}" if model else "")
-                    with st.expander(title):
-                        tools = call.get("tools") or []
-                        if tools:
-                            st.caption("Tools offered: " + ", ".join(tools))
-                        for message in call.get("input") or []:
-                            st.markdown(f"**{message.get('role', '')}**")
-                            st.code(message.get("content", ""), language="text")
-                        st.markdown("**output**")
-                        st.code(call.get("output", ""), language="text")
-
-        tools_path = (latest.get("artifacts") or {}).get("tools")
-        if tools_path and Path(tools_path).exists():
-            try:
-                called = json.loads(Path(tools_path).read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                called = []
-            st.markdown("**Tools called**")
-            if not called:
-                st.caption("No tools were called this run.")
-            else:
-                st.caption(", ".join(f"{t.get('name', '')} ({t.get('seconds', 0)}s)" for t in called))
-                for i, tool in enumerate(called, start=1):
-                    with st.expander(f"{i}. {tool.get('name', '')} — {tool.get('seconds', 0)}s"):
-                        if tool.get("arguments"):
-                            st.markdown("**arguments**")
-                            st.code(str(tool.get("arguments")), language="text")
-                        if tool.get("error"):
-                            st.error(str(tool.get("error")))
-                        st.markdown("**result**")
-                        st.code(str(tool.get("result", "")), language="text")
+            evt_index = 0
+            event_css: list[str] = []
+            prev_tools: list[str] = []
+            for row in timeline:
+                kind = row.get("kind")
+                if kind == "stage":
+                    st.markdown(
+                        f"<div class='tl-stage'><span>{row.get('label', '')}</span>"
+                        f"<span class='badge'>{float(row.get('seconds', 0)):.2f}s</span></div>",
+                        unsafe_allow_html=True,
+                    )
+                elif kind == "overhead":
+                    st.markdown(
+                        f"<div class='tl-note'>agent overhead · {float(row.get('seconds', 0)):.2f}s</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    secs = float(row.get("seconds", 0) or 0)
+                    evt_index += 1
+                    key = f"evt_{evt_index}"
+                    if kind == "tool":
+                        title = f"Tool · {row.get('name', '')}"
+                    else:
+                        model = row.get("model") or ""
+                        title = "↳ Model call" + (f" · {model}" if model else "")
+                        if row.get("note"):
+                            title += f" · {row['note']}"
+                        tool_calls = row.get("requested") or row.get("called") or []
+                        requested_names = [c.get("name", "") for c in tool_calls]
+                        if requested_names:
+                            title += "  →  calls " + ", ".join(requested_names)
+                    with st.expander(title, key=key):
+                        if kind == "tool":
+                            st.markdown("**Input — arguments passed to the tool**")
+                            st.code(str(row.get("arguments") or "{}"), language="json")
+                            if row.get("error"):
+                                st.error(str(row.get("error")))
+                            st.markdown("**Output — result the tool returned**")
+                            st.code(str(row.get("result", "")), language="text")
+                        else:
+                            offered = row.get("tools") or []
+                            if offered:
+                                st.caption("Tools offered to the model: " + ", ".join(offered))
+                            requested = row.get("requested") or row.get("called") or []
+                            messages = row.get("input") or []
+                            st.markdown("**Input — everything sent to the model**")
+                            if not messages:
+                                st.caption("Input not saved (SAVE_CALL_IO is off) or unavailable.")
+                            for message in messages:
+                                role = message.get("role", "")
+                                content = message.get("content", "")
+                                if role == "assistant" and not str(content).strip():
+                                    content = (
+                                        "(tool call: " + ", ".join(prev_tools) + ")"
+                                        if prev_tools
+                                        else "(no text — the model called a tool here)"
+                                    )
+                                st.markdown(f"*{role}*")
+                                st.code(content, language="text")
+                            image_paths = [p for p in (row.get("images") or []) if Path(p).exists()]
+                            if image_paths:
+                                st.markdown(f"*images sent to the model ({len(image_paths)})*")
+                                for path in image_paths:
+                                    st.image(path)
+                            prev_tools = [call.get("name", "") for call in requested]
+                            st.markdown("**Output — what the model produced**")
+                            if requested:
+                                for call in requested:
+                                    st.markdown(f"↳ requested tool `{call.get('name', '')}` with:")
+                                    params = call.get("arguments")
+                                    st.code(str(params) if params else "{}", language="json")
+                            if row.get("output"):
+                                st.code(row["output"], language="text")
+                            elif requested:
+                                st.caption("No text — the model only requested tool calls on this turn.")
+                            elif not messages:
+                                st.caption("Output not saved (SAVE_CALL_IO is off).")
+                    event_css.append(
+                        f".st-key-{key} summary {{ position: relative; }}"
+                        f".st-key-{key} summary::after {{ content: '{secs:.2f}s'; position: absolute; "
+                        f"right: 2.6rem; top: 50%; transform: translateY(-50%); color: var(--muted); "
+                        f"font-size: 0.68rem; font-weight: 500; letter-spacing: .01em; "
+                        f"font-variant-numeric: tabular-nums; }}"
+                    )
+            if event_css:
+                st.markdown("<style>" + "".join(event_css) + "</style>", unsafe_allow_html=True)
 
     # Floating ask panel: only on the Result page, but visible across its tabs.
     _ask_panel()
@@ -581,7 +769,7 @@ def _page_result() -> None:
 # --------------------------------------------------------------------------- #
 def _page_practice() -> None:
     _prelude()
-    st.title("Practice")
+    _hero("Practice", "Turn the report's drills into this week's plan.")
     latest = _latest_report()
     if not latest:
         st.info("Analyze a video or photo first, then your drills will show up here.")
@@ -609,7 +797,7 @@ def _page_practice() -> None:
 # --------------------------------------------------------------------------- #
 def _page_progress() -> None:
     _prelude()
-    st.title("Progress")
+    _hero("Progress", "How your game is trending across sessions.")
     reports = store.get_reports()
     if not reports:
         st.info("Analyze a few sessions to see your progress.")
@@ -643,7 +831,7 @@ def _page_progress() -> None:
 # --------------------------------------------------------------------------- #
 def _page_you() -> None:
     _prelude()
-    st.title("You")
+    _hero("You", "Your sport, level, and what you're working on.")
     profile = store.get_profile()
     st.markdown("### Your profile")
     sport = st.radio(

@@ -145,7 +145,10 @@ async def analyze(
     tick(progress, "writing artifacts", 30)
     artifact_paths = _save_artifacts(video_path, frames, timestamps, measured, region_box)
 
-    call_trace = observability.CallTrace()
+    call_trace = observability.CallTrace(
+        record_io=config.save_call_io(),
+        media_dir=runtime.ARTIFACTS_DIR / f"{Path(video_path).stem}_media",
+    )
     tool_trace = observability.ToolTrace()
     tool_trace.install()
     backend = get_backend(trace=call_trace)
@@ -240,12 +243,12 @@ async def analyze(
 
     try:
         stem = Path(video_path).stem
-        calls_path = runtime.ARTIFACTS_DIR / f"{stem}_calls.json"
-        calls_path.write_text(json.dumps(call_trace.calls, ensure_ascii=False, indent=2), encoding="utf-8")
-        artifact_paths["calls"] = str(calls_path)
-        tools_path = runtime.ARTIFACTS_DIR / f"{stem}_tools.json"
-        tools_path.write_text(json.dumps(tool_trace.records(), ensure_ascii=False, indent=2), encoding="utf-8")
-        artifact_paths["tools"] = str(tools_path)
+        observability_path = runtime.ARTIFACTS_DIR / f"{stem}_observability.json"
+        observability_path.write_text(
+            json.dumps({"calls": call_trace.calls, "tools": tool_trace.records()}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        artifact_paths["observability"] = str(observability_path)
     except Exception:
         pass
 

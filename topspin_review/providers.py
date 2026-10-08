@@ -33,6 +33,7 @@ class OpenAIVisionBackend:
         last: Exception | None = None
         for attempt in range(config.llm_retries() + 1):
             start = time.monotonic()
+            seq = observability.next_seq()
             try:
                 result = await asyncio.wait_for(self._model.invoke(messages), timeout=config.llm_timeout())
                 record = {
@@ -50,6 +51,9 @@ class OpenAIVisionBackend:
                         messages,
                         text,
                         model=record["model"],
+                        usage=record,
+                        started=start,
+                        seq=seq,
                     )
                 return text
             except Exception as exc:  # noqa: BLE001
