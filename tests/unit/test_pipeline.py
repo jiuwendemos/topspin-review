@@ -7,8 +7,8 @@ import asyncio
 import numpy as np
 from PIL import Image, ImageDraw
 
+from topspin_review import backend as backends
 from topspin_review import observability as usage
-from topspin_review import providers as backends
 from topspin_review import reporting as export
 from topspin_review.analysis import vision
 from topspin_review.domain import compare as compare_mod
@@ -147,7 +147,7 @@ def test_export_markdown_and_html():
 
 
 def test_retrieval_context():
-    from topspin_review.analysis import retrieval
+    from topspin_review.analysis.report import retrieval
 
     reports = [
         {"source": "a.mp4", "issues": [{"issue": "poor footwork and split step"}], "focus": "footwork"},
@@ -184,8 +184,8 @@ def test_usage_extraction():
 
 
 def test_mock_backend_offline():
-    text = asyncio.run(backends.MockVisionBackend().complete([{"role": "user", "content": "attentive_windows"}]))
-    assert "attentive_windows" in text
+    result = asyncio.run(backends.MockVisionBackend().complete([{"role": "user", "content": "attentive_windows"}]))
+    assert "attentive_windows" in result.text
 
 
 def test_service_describe():

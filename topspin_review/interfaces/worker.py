@@ -55,16 +55,12 @@ def main(argv: list[str] | None = None) -> int:
     reporter_thread = threading.Thread(target=reporter, daemon=True)
     reporter_thread.start()
 
-    from topspin_review.analysis import pipeline
+    from topspin_review.analysis import strategies
 
-    run = pipeline.analyze
-    if args.agentic:
-        from topspin_review.analysis import agentic
-
-        run = agentic.analyze
+    strategy = strategies.resolve(args.agentic)
 
     try:
-        run_async(run(args.video, region_box=_parse_box(args.box), progress=prog))
+        run_async(strategy.analyze(args.video, region_box=_parse_box(args.box), progress=prog))
         prog.finish(Path(args.video).stem)
     except Exception as exc:  # noqa: BLE001
         prog.fail(f"{exc}\n\n{traceback.format_exc()}")

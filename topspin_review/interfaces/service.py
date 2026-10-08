@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from topspin_review import config
+from topspin_review.backend.models import make_text_model
 from topspin_review.bootstrap import run as run_async
 from topspin_review.storage import store
 
@@ -53,9 +53,10 @@ def parse_region_box(value: Any) -> tuple[float, float, float, float] | None:
 async def analyze_video(
     video_path: str, region_box: tuple[float, float, float, float] | None = None
 ) -> dict[str, Any]:
-    from topspin_review.analysis import pipeline
+    from topspin_review.analysis import strategies
 
-    return await pipeline.analyze(video_path, region_box=region_box)
+    strategy = strategies.get_strategy(strategies.DETERMINISTIC)
+    return await strategy.analyze(video_path, region_box=region_box)
 
 
 def analyze_video_sync(
@@ -84,7 +85,7 @@ async def ask(stem: str, question: str) -> str:
     }
     prompt = f"Report:\n{json.dumps(context, ensure_ascii=False)}\n\nQuestion: {question}"
     try:
-        model = config.make_model()
+        model = make_text_model()
         result = await model.invoke(
             [{"role": "system", "content": QA_SYSTEM}, {"role": "user", "content": prompt}]
         )

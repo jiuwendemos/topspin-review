@@ -9,12 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
-try:  # openjiuwen is provided by the host environment
-    from openjiuwen.core.single_agent.rail.base import AgentRail
-except Exception:  # pragma: no cover - degrade to a plain class
-    AgentRail = object  # type: ignore[assignment,misc]
-
 from topspin_review import config, observability
+from topspin_review.backend import AgentRail, memory_rail
+from topspin_review.backend import settings as backend_settings
 
 
 class TokenBudgetRail(AgentRail):
@@ -47,10 +44,8 @@ def build_rails() -> list:
     if config.token_budget() > 0:
         rails.append(TokenBudgetRail())
     try:
-        if config.has_embedding():
-            from openjiuwen.harness.rails import MemoryRail
-
-            rails.append(MemoryRail(embedding_config=config.embedding_config()))
+        if backend_settings.has_embedding():
+            rails.append(memory_rail(backend_settings.embedding_config()))
     except Exception:
         pass
     return rails

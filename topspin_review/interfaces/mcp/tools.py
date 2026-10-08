@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 
-from openjiuwen.core.foundation.tool import tool
-
+from topspin_review.backend import tool
 from topspin_review.interfaces import service
 
 _SPEC = service.describe()

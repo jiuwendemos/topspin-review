@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from topspin_review import config
 from topspin_review.analysis import vision
 from topspin_review.analysis.prompts import VERIFY_PROMPT
+from topspin_review.backend.models import make_text_model
 from topspin_review.domain import report as report_schema
 
 
@@ -20,7 +20,7 @@ async def verify(report: dict, observations: str, measured_text: str) -> dict:
     )
     evidence = f"{observations}\n{measured_text}"
     try:
-        model = config.make_model()
+        model = make_text_model()
         result = await model.invoke([{"role": "user", "content": VERIFY_PROMPT.format(issues=listed, evidence=evidence)}])
         data = vision.extract_json(getattr(result, "content", "") or "")
         keep = data.get("supported")

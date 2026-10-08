@@ -1,4 +1,9 @@
-"""End-to-end analysis pipeline: measure motion, two-pass vision, write the report."""
+"""Deterministic analysis pipeline (the default strategy).
+
+Measure motion, run two vision passes, then have the report agent write the
+report. The alternative model-driven strategy is
+:mod:`topspin_review.analysis.strategies.agentic`.
+"""
 
 from __future__ import annotations
 
@@ -8,30 +13,17 @@ from pathlib import Path
 from typing import Any
 
 from topspin_review import config, observability, reporting
-from topspin_review.analysis import prompts, report_agent, retrieval, vision
-from topspin_review.analysis import rails as rails_mod
-from topspin_review.analysis import verify as verify_mod
+from topspin_review.analysis import prompts, vision
 from topspin_review.analysis.progress import Progress, tick
+from topspin_review.analysis.report import build_agent, build_rails, retrieval, verification
+from topspin_review.analysis.session import ensure_runner, run_agent, start_session
+from topspin_review.backend import settings as backend_settings
+from topspin_review.backend.models import make_text_model
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
 from topspin_review.domain import report as report_schema
 from topspin_review.perception import ball, imaging, metrics, pose, quality, sampling
-from topspin_review.providers import get_backend
 from topspin_review.storage import runtime, store
-
-_runner_started = False
-
-
-async def _ensure_runner() -> None:
-    global _runner_started
-    if not _runner_started:
-        from openjiuwen.core.runner import Runner
-
-        try:
-            await Runner.start()
-        except Exception:
-            pass
-        _runner_started = True
 
 
 def _clean_windows(raw: Any, timestamps: list[float], cap: int) -> list[dict]:
@@ -115,15 +107,13 @@ async def analyze(
     ``region_box`` (normalized l,t,r,b) restricts analysis to a user-picked area.
     ``progress`` (optional) receives stage/percent updates.
     """
-    from openjiuwen.core.runner import Runner
-
     tick(progress, "preparing", 2)
     setup()
-    config.validate()
+    backend_settings.validate()
     if not Path(video_path).exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
 
-    await _ensure_runner()
+    await ensure_runner()
     store.set_current_video(video_path)
     profile = store.get_profile()
 
@@ -145,13 +135,8 @@ async def analyze(
     tick(progress, "writing artifacts", 30)
     artifact_paths = _save_artifacts(video_path, frames, timestamps, measured, region_box)
 
-    call_trace = observability.CallTrace(
-        record_io=config.save_call_io(),
-        media_dir=runtime.ARTIFACTS_DIR / f"{Path(video_path).stem}_media",
-    )
-    tool_trace = observability.ToolTrace()
-    tool_trace.install()
-    backend = get_backend(trace=call_trace)
+    session = start_session(video_path)
+    backend = session.backend
     if is_still:
         tick(progress, "vision: reviewing image", 55)
         coarse_out = {"overall": "", "attentive_windows": [], "limitations": []}
@@ -193,11 +178,11 @@ async def analyze(
     tick(progress, "preparing report", 72)
     trace = observability.CallbackTrace()
     trace_on = config.trace_callbacks() and trace.install()
-    report_rails = rails_mod.build_rails() if config.rails_enabled() else []
+    report_rails = build_rails() if config.rails_enabled() else []
 
     text_usage = observability.UsageCollector()
-    agent = report_agent.build_agent(
-        model=observability.attach(config.make_model(), text_usage, call_trace), rails=report_rails
+    agent = build_agent(
+        model=observability.attach(make_text_model(), text_usage, session.call_trace), rails=report_rails
     )
     query = (
         f"Today is {date.today().isoformat()}. "
@@ -218,39 +203,12 @@ async def analyze(
         "then give me a short summary."
     )
     tick(progress, "agent writing report", 80)
-    result = await Runner.run_agent(agent, {"query": query})
+    result = await run_agent(agent, query)
     tick(progress, "saving report", 92)
 
-    vision_usage = backend.usage_summary() if hasattr(backend, "usage_summary") else {}
-    vision_calls = backend.usage_calls() if hasattr(backend, "usage_calls") else []
-    text = text_usage.summary()
-    usage = {
-        "vision": vision_usage,
-        "vision_calls": vision_calls,
-        "text": text,
-        "text_calls": text_usage.records(),
-        "calls": int(vision_usage.get("calls", 0)) + int(text.get("calls", 0)),
-        "total_tokens": int(vision_usage.get("total_tokens", 0)) + int(text.get("total_tokens", 0)),
-        "models": {
-            "text": config.text_model_name(),
-            "vision": config.vision_model_name(),
-            "provider": config.model_provider(),
-            "api_base": config.api_base(),
-        },
-    }
-    if trace_on:
-        usage["callback_trace"] = trace.summary()
-
-    try:
-        stem = Path(video_path).stem
-        observability_path = runtime.ARTIFACTS_DIR / f"{stem}_observability.json"
-        observability_path.write_text(
-            json.dumps({"calls": call_trace.calls, "tools": tool_trace.records()}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        artifact_paths["observability"] = str(observability_path)
-    except Exception:
-        pass
+    usage = session.usage_summary(text_usage, callback_trace=trace if trace_on else None)
+    if path := session.save_details():
+        artifact_paths["observability"] = path
 
     report = store.patch_last_report(
         {
@@ -272,7 +230,7 @@ async def analyze(
         report_schema.calibrate(report, clip_quality)
         if config.verify_reports():
             try:
-                await verify_mod.verify(report, observations, prompts.metrics_text(measured))
+                await verification.verify(report, observations, prompts.metrics_text(measured))
             except Exception:
                 pass
 

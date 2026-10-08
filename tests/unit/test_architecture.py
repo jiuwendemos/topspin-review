@@ -1,7 +1,7 @@
 """Enforce the layered dependency direction (architecture as a test).
 
 Dependencies may only point inward:
-    interfaces -> analysis -> providers / perception -> domain
+    interfaces -> analysis -> backend / perception -> domain
 with ``observability``, ``storage`` and ``config`` as neutral leaves.
 """
 
@@ -13,16 +13,16 @@ from pathlib import Path
 PKG = Path(__file__).resolve().parents[2] / "topspin_review"
 
 # Layers that are single modules at the package root (not sub-packages).
-TOP_LAYERS = {"observability", "providers", "reporting"}
+TOP_LAYERS = {"observability", "reporting"}
 
 # For each layer, the app layers it must NOT import.
 FORBIDDEN: dict[str, set[str]] = {
-    "domain": {"observability", "perception", "analysis", "providers", "storage", "reporting", "interfaces"},
-    "observability": {"domain", "perception", "analysis", "providers", "storage", "reporting", "interfaces"},
-    "perception": {"analysis", "providers", "interfaces"},
-    "providers": {"domain", "perception", "analysis", "reporting", "interfaces"},
-    "storage": {"domain", "perception", "analysis", "providers", "reporting", "interfaces"},
-    "reporting": {"observability", "perception", "analysis", "providers", "interfaces"},
+    "domain": {"observability", "perception", "analysis", "backend", "storage", "reporting", "interfaces"},
+    "observability": {"domain", "perception", "analysis", "storage", "reporting", "interfaces"},
+    "perception": {"analysis", "backend", "interfaces"},
+    "backend": {"domain", "perception", "analysis", "reporting", "interfaces"},
+    "storage": {"domain", "perception", "analysis", "backend", "reporting", "interfaces"},
+    "reporting": {"observability", "perception", "analysis", "backend", "interfaces"},
     "analysis": {"interfaces"},
 }
 

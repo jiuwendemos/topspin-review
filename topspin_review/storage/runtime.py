@@ -26,27 +26,12 @@ _configured = False
 
 
 def setup() -> None:
-    """Create the runtime directories and route openjiuwen logging into LOG_DIR."""
+    """Create the runtime directories (idempotent)."""
     global _configured
     if _configured:
         return
     for directory in (WORKSPACE_DIR, LOG_DIR, DATA_DIR, CACHE_DIR, ARTIFACTS_DIR):
         directory.mkdir(parents=True, exist_ok=True)
-    try:
-        from openjiuwen.core.common.logging.log_config import configure_log_config
-
-        configure_log_config(
-            {
-                "backend": "default",
-                "level": "INFO",
-                "log_path": str(LOG_DIR),
-                "output": ["file"],
-                "interface_output": ["file"],
-                "performance_output": ["file"],
-            }
-        )
-    except Exception:
-        pass
     _configured = True
 
 

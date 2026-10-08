@@ -11,8 +11,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from topspin_review import config
 from topspin_review import reporting as export
+from topspin_review.backend import settings as backend_settings
 from topspin_review.bootstrap import run as run_async
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
@@ -97,18 +97,13 @@ def _parse_box(text: str | None) -> tuple[float, float, float, float] | None:
 
 
 def cmd_analyze(path: str, box: str | None = None, agentic: bool = False) -> int:
-    from topspin_review.analysis import pipeline
+    from topspin_review.analysis import strategies
 
-    run = pipeline.analyze
-    use_agentic = agentic or config.agentic_mode()
-    if use_agentic:
-        from topspin_review.analysis import agentic
-
-        run = agentic.analyze
+    strategy = strategies.resolve(agentic)
 
     try:
-        outcome = run_async(run(path, region_box=_parse_box(box)))
-    except (config.ConfigError, FileNotFoundError) as exc:
+        outcome = run_async(strategy.analyze(path, region_box=_parse_box(box)))
+    except (backend_settings.ConfigError, FileNotFoundError) as exc:
         print(f"error: {exc}")
         return 2
     result = outcome.get("result") if isinstance(outcome, dict) else None

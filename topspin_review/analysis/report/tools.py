@@ -6,8 +6,7 @@ import json
 from datetime import date
 from typing import Any
 
-from openjiuwen.core.foundation.tool import tool
-
+from topspin_review.backend import tool
 from topspin_review.domain import report as report_schema
 from topspin_review.storage import store
 

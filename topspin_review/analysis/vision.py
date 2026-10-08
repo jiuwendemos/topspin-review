@@ -16,8 +16,8 @@ from PIL import Image
 
 from topspin_review import config
 from topspin_review.analysis import prompts
+from topspin_review.analysis.vision_telemetry import recording_backend
 from topspin_review.perception import imaging, metrics, pose
-from topspin_review.providers import get_backend
 
 
 def extract_json(text: str) -> dict:
@@ -56,7 +56,7 @@ async def coarse(
     if not frames:
         return {"overall": "No frames could be extracted.", "attentive_windows": [], "limitations": []}
 
-    backend = backend or get_backend()
+    backend = backend or recording_backend()
     sheet = imaging.contact_sheet(frames, timestamps, cols=min(4, len(frames)))
     prompt = prompts.COARSE_PROMPT.format(
         n=len(frames),
@@ -95,7 +95,7 @@ async def fine(
     if not frames and not zoom_frames:
         return {"observations": "", "signals": [], "limitations": []}
 
-    backend = backend or get_backend()
+    backend = backend or recording_backend()
     sheet = imaging.contact_sheet(frames, timestamps, cols=min(4, len(frames))) if frames else None
     rendered = ", ".join(f"[{w.get('start')}s-{w.get('end')}s]" for w in windows) or "none"
     prompt = prompts.FINE_PROMPT.format(
@@ -143,7 +143,7 @@ async def fine(
 
 async def analyze_still(frame: Image.Image, profile: dict, backend=None) -> dict:
     """Single-image pass: describe the static posture only."""
-    backend = backend or get_backend()
+    backend = backend or recording_backend()
     prompt = prompts.STILL_PROMPT.format(
         sport=profile.get("sport", "table tennis"),
         level=profile.get("level", "unknown"),

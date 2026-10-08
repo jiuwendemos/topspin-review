@@ -437,48 +437,39 @@ class ToolTrace:
 
     def install(self) -> bool:
         """Register the observers. Returns ``False`` if unavailable (never raises)."""
-        try:
-            from openjiuwen.core.runner import Runner
-            from openjiuwen.core.runner.callback.events import ToolCallEvents
+        from topspin_review.backend.runner import on_tool_calls
 
-            framework = Runner.callback_framework
+        async def _started(*args: Any, **kwargs: Any) -> None:
+            key = kwargs.get("tool_id") or kwargs.get("tool_name")
+            self._open[key] = {
+                "name": str(kwargs.get("tool_name") or ""),
+                "arguments": _tool_arguments(kwargs.get("inputs")),
+                "started": time.monotonic(),
+                "seq": next_seq(),
+            }
 
-            async def _started(*args: Any, **kwargs: Any) -> None:
-                key = kwargs.get("tool_id") or kwargs.get("tool_name")
-                self._open[key] = {
-                    "name": str(kwargs.get("tool_name") or ""),
-                    "arguments": _tool_arguments(kwargs.get("inputs")),
-                    "started": time.monotonic(),
-                    "seq": next_seq(),
-                }
+        async def _finished(*args: Any, **kwargs: Any) -> None:
+            key = kwargs.get("tool_id") or kwargs.get("tool_name")
+            rec = self._open.pop(key, None) or {
+                "name": str(kwargs.get("tool_name") or ""),
+                "arguments": "",
+                "started": time.monotonic(),
+                "seq": next_seq(),
+            }
+            rec["seconds"] = round(time.monotonic() - rec.get("started", time.monotonic()), 2)
+            rec["result"] = _as_text(kwargs.get("result"), 4000)
+            self.calls.append(rec)
 
-            async def _finished(*args: Any, **kwargs: Any) -> None:
-                key = kwargs.get("tool_id") or kwargs.get("tool_name")
-                rec = self._open.pop(key, None) or {
-                    "name": str(kwargs.get("tool_name") or ""),
-                    "arguments": "",
-                    "started": time.monotonic(),
-                    "seq": next_seq(),
-                }
-                rec["seconds"] = round(time.monotonic() - rec.get("started", time.monotonic()), 2)
-                rec["result"] = _as_text(kwargs.get("result"), 4000)
-                self.calls.append(rec)
+        async def _error(*args: Any, **kwargs: Any) -> None:
+            key = kwargs.get("tool_id") or kwargs.get("tool_name")
+            rec = self._open.pop(key, None)
+            if rec is None:
+                return
+            rec["seconds"] = round(time.monotonic() - rec.get("started", time.monotonic()), 2)
+            rec["error"] = str(kwargs.get("error"))
+            self.calls.append(rec)
 
-            async def _error(*args: Any, **kwargs: Any) -> None:
-                key = kwargs.get("tool_id") or kwargs.get("tool_name")
-                rec = self._open.pop(key, None)
-                if rec is None:
-                    return
-                rec["seconds"] = round(time.monotonic() - rec.get("started", time.monotonic()), 2)
-                rec["error"] = str(kwargs.get("error"))
-                self.calls.append(rec)
-
-            framework.on(ToolCallEvents.TOOL_CALL_STARTED)(_started)
-            framework.on(ToolCallEvents.TOOL_CALL_FINISHED)(_finished)
-            framework.on(ToolCallEvents.TOOL_CALL_ERROR)(_error)
-            return True
-        except Exception:
-            return False
+        return on_tool_calls(_started, _finished, _error)
 
     def records(self) -> list[dict]:
         return [dict(c) for c in self.calls]
@@ -512,21 +503,16 @@ class CallbackTrace:
 
     def install(self) -> bool:
         """Register the observer. Returns ``False`` if unavailable (never raises)."""
-        try:
-            from openjiuwen.core.runner import Runner
-            from openjiuwen.core.runner.callback.events import LLMCallEvents
+        from topspin_review.backend.runner import on_llm_output
 
-            async def _observe(*args: Any, **kwargs: Any) -> None:
-                for obj in list(args) + list(kwargs.values()):
-                    record = extract_usage(obj)
-                    if record:
-                        self.usages.append(record)
-                        return
+        async def _observe(*args: Any, **kwargs: Any) -> None:
+            for obj in list(args) + list(kwargs.values()):
+                record = extract_usage(obj)
+                if record:
+                    self.usages.append(record)
+                    return
 
-            Runner.callback_framework.on(LLMCallEvents.LLM_INVOKE_OUTPUT)(_observe)
-            return True
-        except Exception:
-            return False
+        return on_llm_output(_observe)
 
     def summary(self) -> dict:
         return summarize(self.usages)
