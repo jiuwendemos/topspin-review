@@ -1,13 +1,14 @@
-"""openjiuwen rails integration: the ``AgentRail`` base, a token-budget rail,
-``MemoryRail`` and the rail policy for a report agent.
+"""openjiuwen rails: the ``AgentRail`` base, ``TokenBudgetRail``, ``MemoryRail``,
+and the name → rail resolution used by the agents file.
 
-This is under-the-hood agentic machinery. The policy here reads only backend
-settings (token budget, embeddings), so no application module is imported.
+Rails are under-the-hood machinery. Application code selects rails only by *name*
+(via config); it never constructs them — :func:`resolve` builds the named rails
+here and :func:`topspin_review.backend.agent.create_agent` attaches them.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from topspin_review.backend import observability
@@ -59,15 +60,35 @@ def _count_tokens(response: Any) -> int:
     return int(observability.extract_usage(response).get("total_tokens", 0) or 0)
 
 
-def build_rails() -> list:
-    """Rails for a report agent: token budget (when set) + memory (when embeddings set)."""
-    rails: list = []
+def _token_budget_rail() -> Any | None:
     budget = backend_settings.token_budget()
-    if budget > 0:
-        rails.append(TokenBudgetRail(budget, _count_tokens))
-    try:
-        if backend_settings.has_embedding():
-            rails.append(memory_rail(backend_settings.embedding_config()))
-    except Exception:
-        pass
+    return TokenBudgetRail(budget, _count_tokens) if budget > 0 else None
+
+
+def _memory_rail() -> Any | None:
+    if not backend_settings.has_embedding():
+        return None
+    return memory_rail(backend_settings.embedding_config())
+
+
+# Known rail names → factory (returns a rail, or None when it doesn't apply).
+RAILS: dict[str, Callable[[], Any | None]] = {
+    "token_budget": _token_budget_rail,
+    "memory": _memory_rail,
+}
+
+
+def resolve(names: Iterable[str] | None) -> list:
+    """Build the rails named in ``names`` (unknown names skipped; never raises)."""
+    rails: list = []
+    for name in names or ():
+        factory = RAILS.get(str(name).strip())
+        if factory is None:
+            continue
+        try:
+            rail = factory()
+        except Exception:
+            rail = None
+        if rail is not None:
+            rails.append(rail)
     return rails

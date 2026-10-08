@@ -1,12 +1,12 @@
 """Backend layer: the single home for everything under-the-hood of the agentic system.
 
-- :mod:`~topspin_review.backend.settings` — backend settings (provider, keys, URLs, model names, timeouts, embeddings, rails/budget/tracing).
-- :mod:`~topspin_review.backend.models` — openjiuwen model-client construction.
+- :mod:`~topspin_review.backend.settings` — backend settings (provider, keys, URLs, model names, timeouts, embeddings, budget/tracing).
+- :mod:`~topspin_review.backend.models` — openjiuwen model-client construction (internal).
 - :mod:`~topspin_review.backend.providers` — one module per vision provider, behind ``get_backend``.
-- :mod:`~topspin_review.backend.agent` — DeepAgent construction.
-- :mod:`~topspin_review.backend.rails` — ``AgentRail`` base, ``TokenBudgetRail``, ``MemoryRail``, ``build_rails()``.
+- :mod:`~topspin_review.backend.agent` — the agents file: ``create_agent()`` builds the model, resolves rails, and constructs the DeepAgent.
+- :mod:`~topspin_review.backend.rails` — rail implementations and name resolution (internal).
 - :mod:`~topspin_review.backend.observability` — usage/trace capture and the execution timeline.
-- :mod:`~topspin_review.backend.tools` — the ``@tool`` decorator.
+- :mod:`~topspin_review.backend.tools` — ``ToolSpec`` + ``decorate()`` (openjiuwen tool decoration).
 - :mod:`~topspin_review.backend.runner` — Runner lifecycle, agent execution, callback events.
 - :mod:`~topspin_review.backend.logs` — openjiuwen logging setup.
 
@@ -23,20 +23,16 @@ from topspin_review.backend.providers import (
     VisionResult,
     get_backend,
 )
-from topspin_review.backend.rails import AgentRail, TokenBudgetRail, build_rails, memory_rail
-from topspin_review.backend.tools import tool
+from topspin_review.backend.tools import ToolSpec, decorate
 
 __all__ = [
     "PROVIDERS",
-    "AgentRail",
     "MockVisionBackend",
     "OpenAIVisionBackend",
-    "TokenBudgetRail",
+    "ToolSpec",
     "VisionBackend",
     "VisionResult",
-    "build_rails",
     "create_agent",
+    "decorate",
     "get_backend",
-    "memory_rail",
-    "tool",
 ]

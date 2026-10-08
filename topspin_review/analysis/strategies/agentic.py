@@ -19,7 +19,7 @@ from topspin_review.analysis.progress import Progress, tick
 from topspin_review.analysis.report import build_agent
 from topspin_review.analysis.report import tools as report_tools
 from topspin_review.analysis.session import ensure_runner, run_agent, start_session
-from topspin_review.backend import build_rails, observability, tool
+from topspin_review.backend import ToolSpec, observability
 from topspin_review.backend import settings as backend_settings
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
@@ -29,29 +29,13 @@ from topspin_review.storage import store
 _STATE: dict[str, Any] = {}
 
 
-@tool(
-    name="get_measurements",
-    description="Return the overall measured motion/mechanics for the current clip.",
-    input_params={"type": "object", "properties": {}, "required": []},
-)
 def get_measurements() -> str:
+    """Return the overall measured motion/mechanics for the current clip."""
     return prompts.metrics_text(_STATE.get("metrics") or {})
 
 
-@tool(
-    name="inspect_window",
-    description="Sample frames between start and end seconds, analyze them with the vision model, and return observations.",
-    input_params={
-        "type": "object",
-        "properties": {
-            "start": {"type": "number", "description": "Window start in seconds."},
-            "end": {"type": "number", "description": "Window end in seconds."},
-            "frame_count": {"type": "integer", "description": "How many frames to sample (default 4)."},
-        },
-        "required": ["start", "end"],
-    },
-)
 async def inspect_window(start: float, end: float, frame_count: int = 4) -> str:
+    """Sample frames between start and end seconds, analyze them with the vision model, and return observations."""
     state = _STATE
     if not state:
         return "No clip loaded."
@@ -72,7 +56,28 @@ async def inspect_window(start: float, end: float, frame_count: int = 4) -> str:
     return vision.observations_text({"overall": ""}, out) + "\n" + prompts.metrics_text(window_metrics)
 
 
-AGENTIC_TOOLS = [get_measurements, inspect_window]
+AGENTIC_TOOLS = [
+    ToolSpec(
+        get_measurements,
+        name="get_measurements",
+        description="Return the overall measured motion/mechanics for the current clip.",
+        input_params={"type": "object", "properties": {}, "required": []},
+    ),
+    ToolSpec(
+        inspect_window,
+        name="inspect_window",
+        description="Sample frames between start and end seconds, analyze them with the vision model, and return observations.",
+        input_params={
+            "type": "object",
+            "properties": {
+                "start": {"type": "number", "description": "Window start in seconds."},
+                "end": {"type": "number", "description": "Window end in seconds."},
+                "frame_count": {"type": "integer", "description": "How many frames to sample (default 4)."},
+            },
+            "required": ["start", "end"],
+        },
+    ),
+]
 
 
 async def analyze(
@@ -114,10 +119,9 @@ async def analyze(
         }
     )
 
-    report_rails = build_rails() if backend_settings.rails_enabled() else []
     text_usage = observability.UsageCollector()
     agent = build_agent(
-        rails=report_rails,
+        rails=config.rails(),
         usage=text_usage,
         trace=session.call_trace,
         system_prompt=prompts.AGENTIC_SYSTEM,

@@ -68,11 +68,6 @@ def verify_ssl() -> bool:
 
 
 # --- run constraints & observability (under-the-hood behaviour) ------------- #
-def rails_enabled() -> bool:
-    """Attach openjiuwen rails (token budget / memory) to report agents."""
-    return _bool("RAILS", "true")
-
-
 def token_budget() -> int:
     """Abort a run once cumulative model tokens exceed this (0 = unlimited)."""
     return int(os.getenv("TOKEN_BUDGET", "0"))

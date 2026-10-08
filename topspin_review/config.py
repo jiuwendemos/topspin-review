@@ -74,3 +74,18 @@ def clips_enabled() -> bool:
 def retrieval_enabled() -> bool:
     """Add lexically-retrieved past sessions to the report context."""
     return _bool("RETRIEVAL", "true")
+
+
+def rails() -> list[str]:
+    """Names of the openjiuwen rails to enable on report agents (``RAILS`` env).
+
+    ``true``/``false`` toggle the default set; otherwise a comma-separated list of
+    names (known: ``token_budget``, ``memory``). The rails themselves are built by
+    the backend, not here.
+    """
+    raw = os.getenv("RAILS", "true").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return ["token_budget", "memory"]
+    if raw in {"0", "false", "no", "off", ""}:
+        return []
+    return [name.strip() for name in raw.split(",") if name.strip()]

@@ -53,9 +53,9 @@ backend/
 ├── settings.py            # backend env: provider/keys, model names, timeouts, embeddings, rails/budget/tracing
 ├── models.py              # make_text_model() / make_vision_model() — openjiuwen client construction
 ├── agent.py               # the agents file: create_agent() builds + instruments the model, then the DeepAgent
-├── rails.py               # AgentRail base + TokenBudgetRail + memory_rail() + build_rails()
+├── rails.py               # AgentRail base + TokenBudgetRail + memory_rail() + resolve(names)
 ├── observability.py       # usage/trace capture + the execution timeline
-├── tools.py               # the @tool decorator (re-exported)
+├── tools.py               # ToolSpec + decorate() (openjiuwen tool decoration)
 ├── runner.py              # Runner lifecycle, run_agent(), callback-event bridge
 ├── logs.py                # route openjiuwen logging to a directory
 └── providers/             # one module per vision provider
@@ -103,15 +103,19 @@ only `topspin_review.backend`.
   `make_vision_model`, lazy `openjiuwen...Model`, reading `backend.settings`). External
   code never imports it.
 - **Agent** — `backend.agent.create_agent` is the agents file: it builds (and
-  instruments) the model, then the DeepAgent. `analysis/report/agent.build_agent` is
-  the report policy over it; the deterministic and agentic strategies both use it
-  (the agentic one overrides the prompt, tools and iterations).
-- **Tools** — `backend.tools.tool` (the `@tool` decorator), used by
-  `analysis/report/tools.py`, the agentic strategy's `inspect_window`, and
-  `interfaces/mcp/tools.py`.
-- **Rails** — `backend.rails` holds both the framework adapters (`AgentRail`,
-  `TokenBudgetRail`, `memory_rail()`) and the policy (`build_rails()`): token budget
-  from backend settings; `MemoryRail` when `EMBED_*` is set.
+  instruments) the model, resolves rails from the names it is given, then builds the
+  DeepAgent. `analysis/report/agent.build_agent` is the report policy over it; the
+  deterministic and agentic strategies both use it (the agentic one overrides the
+  prompt, tools and iterations).
+- **Tools** — application code defines plain callables + `backend.ToolSpec`
+  (`analysis/report/tools.py`, the agentic strategy's `inspect_window`,
+  `interfaces/mcp/tools.py`); `backend.agent.create_agent` (and `backend.decorate`)
+  turn specs into openjiuwen tools. Nothing about tool decoration is known outside
+  `backend`.
+- **Rails** — application code only names rails (`config.rails()`, e.g.
+  `["token_budget", "memory"]`); `backend.agent.create_agent` resolves the names via
+  `backend.rails.resolve()` and builds/attaches the rails. The implementations
+  (`AgentRail`, `TokenBudgetRail`, `memory_rail()`) never leave `backend`.
 - **Runner** — `backend.runner.start` / `run_agent`, and its callback-event bridge
   (`on_tool_calls` / `on_llm_output`) used by `backend.observability` traces.
 - **Telemetry** — `backend.observability` captures usage/traces and builds the

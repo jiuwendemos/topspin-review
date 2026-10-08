@@ -6,6 +6,7 @@ model is built and instrumented inside the backend agents file, never here.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from topspin_review.analysis import prompts
@@ -17,7 +18,7 @@ from topspin_review.storage import runtime
 
 def build_agent(
     *,
-    rails: list | None = None,
+    rails: Sequence[str] | None = None,
     usage: Any = None,
     trace: Any = None,
     system_prompt: str | None = None,
