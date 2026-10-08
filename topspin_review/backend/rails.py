@@ -3,7 +3,7 @@ and the name → rail resolution used by the agents file.
 
 Rails are under-the-hood machinery. Application code selects rails only by *name*
 (via config); it never constructs them — :func:`resolve` builds the named rails
-here and :func:`topspin_review.backend.agent.create_agent` attaches them.
+here and :func:`topspin_review.backend.agent_builder.build` attaches them.
 """
 
 from __future__ import annotations

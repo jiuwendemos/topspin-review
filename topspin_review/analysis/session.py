@@ -2,9 +2,9 @@
 
 Both strategies — :mod:`topspin_review.analysis.strategies.deterministic` (the
 default pipeline) and :mod:`topspin_review.analysis.strategies.agentic` (the
-opt-in model-driven mode) — build on this so the openjiuwen Runner lifecycle,
-model/tool tracing, usage accounting and artifact writing live in exactly one
-place. The vision agent is built here too (from the backend agents file).
+opt-in model-driven mode) — build on this so the openjiuwen Runner lifecycle and
+the run recorder live in exactly one place. The vision agent is built here too
+(from the backend agent builder).
 """
 
 from __future__ import annotations
@@ -15,63 +15,50 @@ from pathlib import Path
 from typing import Any
 
 from topspin_review.analysis import prompts
-from topspin_review.backend import create_vision_agent, observability, runner
-from topspin_review.backend import settings as backend_settings
+from topspin_review.backend import VisionParams, build, run_agent
 from topspin_review.storage import runtime
 
-
-async def ensure_runner() -> None:
-    """Start openjiuwen's Runner once per process (best-effort, never raises)."""
-    await runner.start()
-
-
-async def run_agent(agent: Any, query: str) -> Any:
-    """Run a DeepAgent query on the shared Runner."""
-    return await runner.run_agent(agent, query)
+__all__ = ["RunSession", "run_agent", "start_session"]
 
 
 @dataclass
 class RunSession:
-    """Tracing, the vision agent, and usage for a single analysis run."""
+    """The run recorder, the vision agent and the media dir for a single run."""
 
     video_path: str
-    call_trace: observability.CallTrace
-    tool_trace: observability.ToolTrace
+    recorder: Any
     vision_agent: Any
-    vision_usage: observability.UsageCollector
     media_dir: Path
 
-    def usage_summary(self, text_usage: observability.UsageCollector, callback_trace: Any = None) -> dict[str, Any]:
+    def usage_summary(self) -> dict[str, Any]:
         """Combine vision + text usage into the report's ``usage`` block."""
-        vision_usage = self.vision_usage.summary()
-        vision_calls = self.vision_usage.records()
-        text = text_usage.summary()
+        vision_usage = self.recorder.vision.summary() if self.recorder else {}
+        vision_calls = self.recorder.vision.records() if self.recorder else []
+        text = self.recorder.text.summary() if self.recorder else {}
+        text_calls = self.recorder.text.records() if self.recorder else []
         usage: dict[str, Any] = {
             "vision": vision_usage,
             "vision_calls": vision_calls,
             "text": text,
-            "text_calls": text_usage.records(),
+            "text_calls": text_calls,
             "calls": int(vision_usage.get("calls", 0)) + int(text.get("calls", 0)),
             "total_tokens": int(vision_usage.get("total_tokens", 0)) + int(text.get("total_tokens", 0)),
-            "models": {
-                "text": backend_settings.text_model_name(),
-                "vision": backend_settings.vision_model_name(),
-                "provider": backend_settings.model_provider(),
-                "api_base": backend_settings.api_base(),
-            },
+            "models": self.recorder.models() if self.recorder else {},
         }
-        if callback_trace is not None:
-            usage["callback_trace"] = callback_trace.summary()
+        if self.recorder is not None and self.recorder.callback is not None:
+            usage["callback_trace"] = self.recorder.callback.summary()
         return usage
 
     def save_details(self) -> str | None:
         """Persist model calls + tool calls to ``<stem>_observability.json`` (best-effort)."""
+        if self.recorder is None:
+            return None
         try:
             stem = Path(self.video_path).stem
             path = runtime.ARTIFACTS_DIR / f"{stem}_observability.json"
             path.write_text(
                 json.dumps(
-                    {"calls": self.call_trace.calls, "tools": self.tool_trace.records()},
+                    {"calls": self.recorder.calls.calls, "tools": self.recorder.tools.records()},
                     ensure_ascii=False,
                     indent=2,
                 ),
@@ -83,26 +70,18 @@ class RunSession:
 
 
 def start_session(video_path: str) -> RunSession:
-    """Install model/tool traces and build the vision agent for ``video_path``."""
+    """Build the vision agent (and run recorder) for ``video_path``."""
     media_dir = runtime.ARTIFACTS_DIR / f"{Path(video_path).stem}_media"
-    call_trace = observability.CallTrace(
-        record_io=backend_settings.save_call_io(),
-        media_dir=media_dir,
-    )
-    tool_trace = observability.ToolTrace()
-    tool_trace.install()
-    vision_usage = observability.UsageCollector()
-    vision_agent = create_vision_agent(
-        system_prompt=prompts.VISION_AGENT_SYSTEM,
-        workspace=str(runtime.ARTIFACTS_DIR),
-        usage=vision_usage,
-        trace=call_trace,
+    result = build(
+        VisionParams(
+            system_prompt=prompts.VISION_AGENT_SYSTEM,
+            workspace=str(runtime.ARTIFACTS_DIR),
+            media_dir=str(media_dir),
+        )
     )
     return RunSession(
         video_path=video_path,
-        call_trace=call_trace,
-        tool_trace=tool_trace,
-        vision_agent=vision_agent,
-        vision_usage=vision_usage,
+        recorder=result.recorder,
+        vision_agent=result.agent,
         media_dir=media_dir,
     )

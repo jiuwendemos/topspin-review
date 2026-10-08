@@ -12,7 +12,7 @@ import argparse
 import sys
 
 from topspin_review import reporting as export
-from topspin_review.backend import settings as backend_settings
+from topspin_review.backend import ConfigError
 from topspin_review.bootstrap import run as run_async
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
@@ -103,7 +103,7 @@ def cmd_analyze(path: str, box: str | None = None, agentic: bool = False) -> int
 
     try:
         outcome = run_async(strategy.analyze(path, region_box=_parse_box(box)))
-    except (backend_settings.ConfigError, FileNotFoundError) as exc:
+    except (ConfigError, FileNotFoundError) as exc:
         print(f"error: {exc}")
         return 2
     result = outcome.get("result") if isinstance(outcome, dict) else None

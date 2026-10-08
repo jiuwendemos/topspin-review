@@ -1,24 +1,32 @@
 """Backend layer: the single home for everything under-the-hood of the agentic system.
 
-- :mod:`~topspin_review.backend.settings` — backend settings (provider, keys, URLs, model names, timeouts, embeddings, budget/tracing).
-- :mod:`~topspin_review.backend.models` — openjiuwen model-client construction (internal).
-- :mod:`~topspin_review.backend.agent` — the agents file: ``create_agent()`` (text) and ``create_vision_agent()`` (multimodal vision).
-- :mod:`~topspin_review.backend.rails` — rail implementations and name resolution (internal).
-- :mod:`~topspin_review.backend.observability` — usage/trace capture and the execution timeline.
-- :mod:`~topspin_review.backend.tools` — ``ToolSpec`` + ``decorate()`` (openjiuwen tool decoration).
-- :mod:`~topspin_review.backend.runner` — Runner lifecycle, agent execution, callback events.
-- :mod:`~topspin_review.backend.logs` — openjiuwen logging setup.
+The application-facing surface is small and explicit:
 
-No ``from openjiuwen...`` import exists outside this package; no application
-module is imported by it. Application behaviour stays in :mod:`topspin_review.config`.
+- ``build`` + ``TextParams`` / ``VisionParams`` — construct agents.
+- ``run_agent`` — run a built agent (starts the Runner if needed).
+- ``ConfigError`` — raised when backend config is missing/invalid.
+- ``configure_logging`` — route openjiuwen logging.
+- ``make_tool`` — publish a callable as a tool (e.g. the MCP interface).
+
+Everything else in ``backend/`` (settings, models, rails, observability, tools
+internals, runner, logs, agent_builder) is an implementation detail and is only
+imported inside ``backend``. No ``from openjiuwen...`` import exists outside this
+package; no application module is imported by it.
 """
 
-from topspin_review.backend.agent import create_agent, create_vision_agent
-from topspin_review.backend.tools import ToolSpec, decorate
+from topspin_review.backend.agent_builder import build
+from topspin_review.backend.agent_builder_params import TextParams, VisionParams
+from topspin_review.backend.logs import configure as configure_logging
+from topspin_review.backend.runner import run_agent
+from topspin_review.backend.settings import ConfigError
+from topspin_review.backend.tools import make_tool
 
 __all__ = [
-    "ToolSpec",
-    "create_agent",
-    "create_vision_agent",
-    "decorate",
+    "ConfigError",
+    "TextParams",
+    "VisionParams",
+    "build",
+    "configure_logging",
+    "make_tool",
+    "run_agent",
 ]

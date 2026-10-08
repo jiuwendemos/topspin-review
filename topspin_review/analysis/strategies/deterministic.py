@@ -16,9 +16,7 @@ from topspin_review import config, reporting
 from topspin_review.analysis import prompts, vision
 from topspin_review.analysis.progress import Progress, tick
 from topspin_review.analysis.report import build_agent, retrieval, verification
-from topspin_review.analysis.session import ensure_runner, run_agent, start_session
-from topspin_review.backend import observability
-from topspin_review.backend import settings as backend_settings
+from topspin_review.analysis.session import run_agent, start_session
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
 from topspin_review.domain import report as report_schema
@@ -109,11 +107,9 @@ async def analyze(
     """
     tick(progress, "preparing", 2)
     setup()
-    backend_settings.validate()
     if not Path(video_path).exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
 
-    await ensure_runner()
     store.set_current_video(video_path)
     profile = store.get_profile()
 
@@ -181,11 +177,7 @@ async def analyze(
     quality_note = "; ".join(clip_quality.get("warnings") or []) or "ok"
 
     tick(progress, "preparing report", 72)
-    trace = observability.CallbackTrace()
-    trace_on = backend_settings.trace_callbacks() and trace.install()
-
-    text_usage = observability.UsageCollector()
-    agent = build_agent(rails=config.rails(), usage=text_usage, trace=session.call_trace)
+    agent = build_agent(rails=config.rails(), recorder=session.recorder)
     query = (
         f"Today is {date.today().isoformat()}. "
         f"Write my coaching report for a {profile.get('sport', 'table tennis')} session.\n"
@@ -208,7 +200,7 @@ async def analyze(
     result = await run_agent(agent, query)
     tick(progress, "saving report", 92)
 
-    usage = session.usage_summary(text_usage, callback_trace=trace if trace_on else None)
+    usage = session.usage_summary()
     if path := session.save_details():
         artifact_paths["observability"] = path
 

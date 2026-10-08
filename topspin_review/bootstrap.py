@@ -17,7 +17,7 @@ _T = TypeVar("_T")
 
 def setup() -> None:
     runtime.setup()
-    from topspin_review.backend.logs import configure as configure_logging
+    from topspin_review.backend import configure_logging
 
     configure_logging(str(runtime.LOG_DIR))
 

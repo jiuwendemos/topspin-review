@@ -27,7 +27,8 @@ async def start() -> None:
 
 
 async def run_agent(agent: Any, query: str) -> Any:
-    """Run a DeepAgent query on the global Runner."""
+    """Run a DeepAgent query on the global Runner (starts it if needed)."""
+    await start()
     from openjiuwen.core.runner import Runner
 
     return await Runner.run_agent(agent, {"query": query})

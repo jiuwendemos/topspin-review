@@ -1,7 +1,7 @@
 """The agent's tools — thin wrappers over :mod:`topspin_review.storage.store`.
 
-Plain callables plus a :class:`~topspin_review.backend.ToolSpec`; the backend agents
-file decorates them into openjiuwen tools.
+Plain callables; the backend agent builder decorates them (auto-extracting the
+name, description and input schema from the function/docstring/signature).
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ import json
 from datetime import date
 from typing import Any
 
-from topspin_review.backend import ToolSpec
 from topspin_review.domain import report as report_schema
 from topspin_review.storage import store
 
@@ -34,13 +33,22 @@ def get_profile() -> str:
 
 
 def recent_reports(n: int = 5) -> str:
-    """Return the most recent saved coaching reports as a JSON array (for tracking progress)."""
+    """Return the most recent saved coaching reports as a JSON array.
+
+    Args:
+        n: How many recent reports to return (default 5).
+    """
     return json.dumps(store.recent_reports(int(n or 5)), ensure_ascii=False)
 
 
 def save_report(report_json: str) -> str:
-    """Save the coaching report (JSON object: date, sport, summary, strengths,
-    issues[{issue, evidence_times, confidence}], drills, focus, progress, limitations)."""
+    """Save the coaching report.
+
+    Args:
+        report_json: JSON object string with keys date, sport, summary, strengths,
+            issues (array of {issue, evidence_times, confidence}), drills, focus,
+            progress, limitations.
+    """
     raw = _parse(report_json)
     if not isinstance(raw, dict):
         return "report must be a JSON object"
@@ -51,36 +59,4 @@ def save_report(report_json: str) -> str:
     return "report saved" + (f" (warnings: {'; '.join(problems)})" if problems else "")
 
 
-ALL_TOOLS = [
-    ToolSpec(
-        get_profile,
-        name="get_profile",
-        description="Return the player profile as JSON (sport, level, dominant_hand, goal).",
-        input_params={"type": "object", "properties": {}, "required": []},
-    ),
-    ToolSpec(
-        recent_reports,
-        name="recent_reports",
-        description="Return the most recent saved coaching reports as a JSON array (for tracking progress).",
-        input_params={
-            "type": "object",
-            "properties": {"n": {"type": "integer", "description": "How many recent reports (default 5)."}},
-            "required": [],
-        },
-    ),
-    ToolSpec(
-        save_report,
-        name="save_report",
-        description=(
-            "Save the coaching report. report_json: an object with keys "
-            "date (string), sport (string), summary (string), strengths (array of strings), "
-            "issues (array of {issue: string, evidence_times: [number], confidence: 'high'|'medium'|'low'}), "
-            "drills (array of strings), focus (string), progress (string), limitations (array of strings)."
-        ),
-        input_params={
-            "type": "object",
-            "properties": {"report_json": {"type": "string", "description": "JSON object string."}},
-            "required": ["report_json"],
-        },
-    ),
-]
+ALL_TOOLS = [get_profile, recent_reports, save_report]

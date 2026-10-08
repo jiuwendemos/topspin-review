@@ -18,10 +18,10 @@ from pathlib import Path
 import streamlit as st
 
 from topspin_review import reporting as export
-from topspin_review.backend import observability
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import evaluate, render
+from topspin_review.interfaces.web.timeline import build_timeline, summary_stats
 from topspin_review.storage import runtime, store
 
 setup()
@@ -619,7 +619,7 @@ def _page_result() -> None:
         usage = latest.get("usage") or {}
         artifacts = latest.get("artifacts") or {}
         models = usage.get("models") or {}
-        stats = observability.summary_stats(usage)
+        stats = summary_stats(usage)
 
         _section("Overview")
         c1, c2, c3, c4 = st.columns(4)
@@ -657,7 +657,7 @@ def _page_result() -> None:
             if not called_tools and isinstance(legacy_tools, list):
                 called_tools = legacy_tools
 
-        timeline = observability.build_timeline(usage, latest.get("timings"), calls=calls, tools=called_tools)
+        timeline = build_timeline(usage, latest.get("timings"), calls=calls, tools=called_tools)
         if timeline:
             st.divider()
             _section("Execution")

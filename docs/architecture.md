@@ -44,17 +44,20 @@ topspin_review/
 `backend/` is the **single home for everything under-the-hood of the agentic
 system**: every openjiuwen import (no `from openjiuwen...` exists anywhere else),
 model/agent access, rails, and telemetry (observability). `config.py` holds only
-*application* settings. Both text and vision go through agents built by the agents
-file — there is no separate provider transport.
+*application* settings. Both text and vision go through agents built by the agent
+builder — there is no separate provider transport. The package exposes a small
+façade (`build`, `TextParams`/`VisionParams`, `run_agent`, `ConfigError`,
+`configure_logging`, `make_tool`); everything else is internal.
 
 ```
 backend/
 ├── settings.py            # backend env: keys, model names, timeouts, embeddings, budget/tracing
 ├── models.py              # make_text_model() / make_vision_model() — openjiuwen client construction
-├── agent.py               # the agents file: create_agent() (text) / create_vision_agent() (multimodal)
+├── agent_builder.py       # build(params): the single agent entry point
+├── agent_builder_params.py# Params / TextParams / VisionParams
 ├── rails.py               # AgentRail base + TokenBudgetRail + memory_rail() + resolve(names)
-├── observability.py       # usage/trace capture + the execution timeline
-├── tools.py               # ToolSpec + decorate() (openjiuwen tool decoration)
+├── observability.py       # usage/trace + timeline + the run Recorder (internal)
+├── tools.py               # make_tool()/make_tools() (openjiuwen tool decoration)
 ├── runner.py              # Runner lifecycle, run_agent(), callback-event bridge
 └── logs.py                # route openjiuwen logging to a directory
 ```
@@ -96,32 +99,33 @@ only `topspin_review.backend`.
 - **Model clients** — `backend.models` is **internal** (`make_text_model` /
   `make_vision_model`, lazy `openjiuwen...Model`, reading `backend.settings`). External
   code never imports it.
-- **Agent** — `backend.agent.create_agent` (text) and `create_vision_agent`
-  (multimodal vision) are the agents file: they build (and instrument) the model,
-  resolve rails from names and decorate tools, then build the DeepAgent.
-  `analysis/report/agent.build_agent` is the report policy over `create_agent`; the
-  deterministic and agentic strategies both use it (the agentic one overrides the
-  prompt, tools and iterations).
-- **Tools** — application code defines plain callables + `backend.ToolSpec`
-  (`analysis/report/tools.py`, the agentic strategy's `inspect_window`,
-  `interfaces/mcp/tools.py`); `backend.agent.create_agent` (and `backend.decorate`)
-  turn specs into openjiuwen tools. Nothing about tool decoration is known outside
-  `backend`.
+- **Agent builder** — `backend.agent_builder.build(params)` is the single entry
+  point: it builds (and instruments) the model, decorates tools, resolves rails and
+  constructs the DeepAgent. The `agent_builder_params` dataclasses (`TextParams`,
+  `VisionParams`) describe the agent. `analysis/report/agent.build_agent` is the
+  report policy over `TextParams`; the deterministic and agentic strategies both use
+  it (the agentic one overrides the prompt, tools and iterations).
+- **Tools** — application code passes plain callables
+  (`analysis/report/tools.py`, the agentic strategy's `inspect_window`); the builder
+  decorates them (`backend.make_tools`, auto-extracting name/description/schema from
+  the function/docstring/signature). `interfaces/mcp/tools.py` uses `backend.make_tool`
+  to publish a callable as a tool. No tool spec is built or passed outside `backend`.
 - **Rails** — application code only names rails (`config.rails()`, e.g.
-  `["token_budget", "memory"]`); `backend.agent.create_agent` resolves the names via
+  `["token_budget", "memory"]`); `backend.agent_builder.build` resolves the names via
   `backend.rails.resolve()` and builds/attaches the rails. The implementations
   (`AgentRail`, `TokenBudgetRail`, `memory_rail()`) never leave `backend`.
 - **Runner** — `backend.runner.start` / `run_agent`, and its callback-event bridge
   (`on_tool_calls` / `on_llm_output`) used by `backend.observability` traces.
-- **Vision** — `backend.agent.create_vision_agent` builds a DeepAgent whose model is
-  the vision model, reading rendered images through the `read_file` tool
-  (`SysOperationRail` + `enable_read_image_multimodal`). `analysis/vision.py` persists
-  contact sheets / motion maps / frames and asks the agent to read them.
-- **Telemetry** — `backend.observability` captures usage/traces (via
-  `observability.attach` on the agent models) and builds the execution timeline.
+- **Vision** — `backend.agent_builder.build(VisionParams(...))` builds a DeepAgent
+  whose model is the vision model, reading rendered images through the `read_file`
+  tool (`SysOperationRail` + `enable_read_image_multimodal`). `analysis/vision.py`
+  persists contact sheets / motion maps / frames and asks the agent to read them.
+- **Telemetry** — the builder creates a run **Recorder** (`backend.observability`,
+  internal) that captures usage/traces; callers never touch it directly. The UI shapes
+  it for display in `interfaces/web/timeline.py` (presentation, not backend).
 - **Agents only.** Application code never calls `Model.invoke` directly; every model
   interaction — text, verification, Q&A, and vision — goes through an openjiuwen
-  agent + `Runner` built by the backend agents file.
+  agent + `Runner` built by the backend agent builder.
 - **Logging** — `backend.logs.configure` routes openjiuwen logging into `runtime/logs/`.
 
 Everything above is optional at import time (lazy imports), so the deterministic
@@ -144,8 +148,8 @@ video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
 - **No import side effects.** `__init__.py` only sets `__version__`. Logging is
   configured by `bootstrap.setup()`, called by every interface entry point (and by
   `conftest.py` in tests) so openjiuwen logs always land in `runtime/logs/`.
-- **Agents, not providers.** Text and vision both go through the backend agents file;
-  there is no separate provider transport to swap.
+- **Agents, not providers.** Text and vision both go through the backend agent
+  builder; there is no separate provider transport to swap.
 - **Single source of paths.** All generated state lives under `runtime/` via
   `storage.runtime` (`runtime.DATA_DIR`, `ARTIFACTS_DIR`, `CACHE_DIR`, ...).
 - **Schema at the boundary.** `domain.report.normalize/validate` runs inside the

@@ -18,9 +18,7 @@ from topspin_review.analysis import prompts, vision
 from topspin_review.analysis.progress import Progress, tick
 from topspin_review.analysis.report import build_agent
 from topspin_review.analysis.report import tools as report_tools
-from topspin_review.analysis.session import ensure_runner, run_agent, start_session
-from topspin_review.backend import ToolSpec, observability
-from topspin_review.backend import settings as backend_settings
+from topspin_review.analysis.session import run_agent, start_session
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
 from topspin_review.perception import ball, metrics, sampling
@@ -35,7 +33,13 @@ def get_measurements() -> str:
 
 
 async def inspect_window(start: float, end: float, frame_count: int = 4) -> str:
-    """Sample frames between start and end seconds, analyze them with the vision model, and return observations."""
+    """Sample frames in a time window, analyze them, and return observations.
+
+    Args:
+        start: Window start in seconds.
+        end: Window end in seconds.
+        frame_count: How many frames to sample (default 4).
+    """
     state = _STATE
     if not state:
         return "No clip loaded."
@@ -57,28 +61,7 @@ async def inspect_window(start: float, end: float, frame_count: int = 4) -> str:
     return vision.observations_text({"overall": ""}, out) + "\n" + prompts.metrics_text(window_metrics)
 
 
-AGENTIC_TOOLS = [
-    ToolSpec(
-        get_measurements,
-        name="get_measurements",
-        description="Return the overall measured motion/mechanics for the current clip.",
-        input_params={"type": "object", "properties": {}, "required": []},
-    ),
-    ToolSpec(
-        inspect_window,
-        name="inspect_window",
-        description="Sample frames between start and end seconds, analyze them with the vision model, and return observations.",
-        input_params={
-            "type": "object",
-            "properties": {
-                "start": {"type": "number", "description": "Window start in seconds."},
-                "end": {"type": "number", "description": "Window end in seconds."},
-                "frame_count": {"type": "integer", "description": "How many frames to sample (default 4)."},
-            },
-            "required": ["start", "end"],
-        },
-    ),
-]
+AGENTIC_TOOLS = [get_measurements, inspect_window]
 
 
 async def analyze(
@@ -89,11 +72,9 @@ async def analyze(
     """Model-driven analysis: the agent inspects the clip and writes the report."""
     tick(progress, "preparing", 2)
     setup()
-    backend_settings.validate()
     if not Path(video_path).exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
 
-    await ensure_runner()
     store.set_current_video(video_path)
     profile = store.get_profile()
 
@@ -121,11 +102,9 @@ async def analyze(
         }
     )
 
-    text_usage = observability.UsageCollector()
     agent = build_agent(
         rails=config.rails(),
-        usage=text_usage,
-        trace=session.call_trace,
+        recorder=session.recorder,
         system_prompt=prompts.AGENTIC_SYSTEM,
         tools=[*AGENTIC_TOOLS, *report_tools.ALL_TOOLS],
         max_iterations=25,
@@ -145,7 +124,7 @@ async def analyze(
     result = await run_agent(agent, query)
     tick(progress, "saving report", 92)
 
-    usage = session.usage_summary(text_usage)
+    usage = session.usage_summary()
     artifacts: dict = {}
     if path := session.save_details():
         artifacts["observability"] = path
