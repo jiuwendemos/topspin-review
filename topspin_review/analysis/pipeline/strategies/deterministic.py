@@ -2,7 +2,7 @@
 
 Measure motion, params two fixed vision passes, then have the report agent write the
 report. The alternative model-driven strategy is
-:mod:`topspin_review.analysis.strategies.agentic`.
+:mod:`topspin_review.analysis.pipeline.strategies.agentic`.
 """
 
 from __future__ import annotations
@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from topspin_review import config, reporting
-from topspin_review.analysis import vision
-from topspin_review.analysis.coaching import retrieve_reports, verify_issues
-from topspin_review.analysis.coaching.prompts import rubric_text
-from topspin_review.analysis.strategies.base import Strategy
-from topspin_review.analysis.strategies.params import Params
-from topspin_review.analysis.strategies.progress import Progress, tick
+from topspin_review.analysis.pipeline.params import Params
+from topspin_review.analysis.pipeline.progress import Progress, tick
+from topspin_review.analysis.pipeline.strategies.base import Strategy
+from topspin_review.analysis.stages import observe
+from topspin_review.analysis.stages.coach import retrieve_reports, verify_issues
+from topspin_review.analysis.stages.coach.prompts import rubric_text
 from topspin_review.domain import report as report_schema
 from topspin_review.perception import imaging, metrics, pose, quality, sampling
 from topspin_review.storage import runtime, store
@@ -113,18 +113,18 @@ class DeterministicStrategy(Strategy):
             windows: list[dict] = []
             zoom_imgs: list = []
             zoom_times: list[float] = []
-            fine_out = await vision.analyze_still(frames[0], profile, agent=agent, media_dir=media_dir)
+            fine_out = await observe.analyze_still(frames[0], profile, agent=agent, media_dir=media_dir)
         else:
             tick(progress, "vision: overview", 38)
-            coarse_out = await vision.coarse(params.meta, frames, timestamps, measured, profile, agent=agent, media_dir=media_dir)
+            coarse_out = await observe.coarse(params.meta, frames, timestamps, measured, profile, agent=agent, media_dir=media_dir)
             windows = _clean_windows(coarse_out.get("attentive_windows"), timestamps, config.max_windows())
             tick(progress, "vision: zoom", 52)
             zoom_imgs, zoom_times = _zoom_frames(params.video_path, windows, config.zoom_frames())
             tick(progress, "vision: detail", 60)
-            fine_out = await vision.fine(
+            fine_out = await observe.fine(
                 frames, timestamps, measured, windows, zoom_imgs, zoom_times, profile, agent=agent, media_dir=media_dir
             )
-        observations = vision.observations_text(coarse_out, fine_out)
+        observations = observe.observations_text(coarse_out, fine_out)
         params.state["observations"] = observations
 
         all_reports = store.get_reports()

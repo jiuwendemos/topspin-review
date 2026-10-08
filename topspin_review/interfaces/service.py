@@ -52,10 +52,10 @@ def parse_region_box(value: Any) -> tuple[float, float, float, float] | None:
 async def analyze_video(
     video_path: str, region_box: tuple[float, float, float, float] | None = None
 ) -> dict[str, Any]:
-    from topspin_review.analysis import strategies
+    from topspin_review.analysis import pipeline
 
-    strategy = strategies.get_strategy(strategies.DETERMINISTIC)
-    return await strategy.analyze(strategies.Params(video_path=video_path, region_box=region_box))
+    strategy = pipeline.get_strategy(pipeline.DETERMINISTIC)
+    return await strategy.analyze(pipeline.Params(video_path=video_path, region_box=region_box))
 
 
 def analyze_video_sync(

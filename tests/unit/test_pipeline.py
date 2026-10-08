@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from topspin_review import reporting as export
-from topspin_review.analysis import vision
+from topspin_review.analysis.stages import observe
 from topspin_review.backend.telemetry import usage
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import evaluate, progress, report
@@ -144,7 +144,7 @@ def test_export_markdown_and_html():
 
 
 def test_retrieval_context():
-    from topspin_review.analysis.coaching import retrieve_reports
+    from topspin_review.analysis.stages.coach import retrieve_reports
 
     reports = [
         {"source": "a.mp4", "issues": [{"issue": "poor footwork and split step"}], "focus": "footwork"},
@@ -155,8 +155,8 @@ def test_retrieval_context():
 
 
 def test_extract_json_variants():
-    assert vision.extract_json('```json\n{"a": 1}\n```') == {"a": 1}
-    assert vision.extract_json("garbage") == {}
+    assert observe.extract_json('```json\n{"a": 1}\n```') == {"a": 1}
+    assert observe.extract_json("garbage") == {}
 
 
 def test_usage_extraction():

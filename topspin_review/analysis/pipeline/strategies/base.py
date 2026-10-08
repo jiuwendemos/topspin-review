@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from topspin_review import config, reporting
-from topspin_review.analysis.coaching import build_agent
-from topspin_review.analysis.strategies.params import Params
-from topspin_review.analysis.strategies.progress import Progress, tick
-from topspin_review.analysis.strategies.run_session import start_session
+from topspin_review.analysis.pipeline.params import Params
+from topspin_review.analysis.pipeline.progress import Progress, tick
+from topspin_review.analysis.pipeline.run_session import start_session
+from topspin_review.analysis.stages.coach import build_agent
 from topspin_review.backend import run_agent
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress

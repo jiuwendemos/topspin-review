@@ -97,8 +97,8 @@ topspin-review/
 │   ├── perception/           # sampling, metrics, ball, pose, imaging, cvutil
 │   ├── backend/              # all agentic under-the-hood: settings, logs,
 │   │                         #   agent/ (builder, models, rails, tools, runner), telemetry/
-│   ├── analysis/             # by business area: vision/ (frames→observations),
-│   │                         #   coaching/ (report agent, tools, verification), strategies/
+│   ├── analysis/             # stages/ (observe, coach) + pipeline/
+│   │                         #   (orchestrator + strategies/: deterministic, agentic)
 │   ├── storage/              # runtime, cache, json_store, store
 │   └── interfaces/           # cli, api, service, mcp/, web/
 ├── tests/

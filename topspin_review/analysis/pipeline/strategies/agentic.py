@@ -11,11 +11,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from topspin_review.analysis import vision
-from topspin_review.analysis.coaching import report_tools
-from topspin_review.analysis.strategies.base import Strategy
-from topspin_review.analysis.strategies.params import Params
-from topspin_review.analysis.strategies.progress import Progress
+from topspin_review.analysis.pipeline.params import Params
+from topspin_review.analysis.pipeline.progress import Progress
+from topspin_review.analysis.pipeline.strategies.base import Strategy
+from topspin_review.analysis.stages import observe
+from topspin_review.analysis.stages.coach import report_tools
 from topspin_review.perception import metrics, sampling
 
 AGENTIC_SYSTEM = """You are Topspin Review. You analyze a racket-sport session video
@@ -63,7 +63,7 @@ async def inspect_window(start: float, end: float, frame_count: int = 4) -> str:
     if not frames:
         return "No frames in that window."
     window_metrics = metrics.analyze(frames, times)
-    out = await vision.fine(
+    out = await observe.fine(
         state["frames"],
         state["timestamps"],
         state["metrics"],
@@ -74,7 +74,7 @@ async def inspect_window(start: float, end: float, frame_count: int = 4) -> str:
         agent=state["agent"],
         media_dir=state["media_dir"],
     )
-    return vision.observations_text({"overall": ""}, out) + "\n" + metrics.text(window_metrics)
+    return observe.observations_text({"overall": ""}, out) + "\n" + metrics.text(window_metrics)
 
 
 AGENTIC_TOOLS = [get_measurements, inspect_window]

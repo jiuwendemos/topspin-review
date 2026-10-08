@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from topspin_review.analysis.vision import prompts
+from topspin_review.analysis.stages.observe import prompts
 from topspin_review.backend import VisionParams, build
 from topspin_review.bootstrap import setup
 from topspin_review.storage import runtime

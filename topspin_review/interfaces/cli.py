@@ -97,12 +97,12 @@ def _parse_box(text: str | None) -> tuple[float, float, float, float] | None:
 
 
 def cmd_analyze(path: str, box: str | None = None, agentic: bool = False) -> int:
-    from topspin_review.analysis import strategies
+    from topspin_review.analysis import pipeline
 
-    strategy = strategies.resolve(agentic)
+    strategy = pipeline.resolve(agentic)
 
     try:
-        outcome = run_async(strategy.analyze(strategies.Params(video_path=path, region_box=_parse_box(box))))
+        outcome = run_async(strategy.analyze(pipeline.Params(video_path=path, region_box=_parse_box(box))))
     except (ConfigError, FileNotFoundError) as exc:
         print(f"error: {exc}")
         return 2

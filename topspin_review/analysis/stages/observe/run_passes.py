@@ -1,8 +1,8 @@
 """The vision analysis passes: overview, detail and still.
 
-Each pass composes a prompt over the rendered images (``vision.render_images``), asks the
-vision agent (``vision.ask_agent``) and returns structured JSON. Prompt text lives in
-:mod:`topspin_review.analysis.vision.prompts`.
+Each pass composes a prompt over the rendered images (``observe.render_images``), asks the
+vision agent (``observe.ask_agent``) and returns structured JSON. Prompt text lives in
+:mod:`topspin_review.analysis.stages.observe.prompts`.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from typing import Any
 
 from PIL import Image
 
-from topspin_review.analysis.vision import prompts, render_images
-from topspin_review.analysis.vision.ask_agent import ask
+from topspin_review.analysis.stages.observe import prompts, render_images
+from topspin_review.analysis.stages.observe.ask_agent import ask
 from topspin_review.perception import metrics
 
 

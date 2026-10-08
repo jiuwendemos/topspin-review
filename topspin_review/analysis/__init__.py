@@ -1,11 +1,9 @@
-"""Analysis, grouped by business area.
+"""Analysis — a pipeline of two stages, run by two interchangeable strategies.
 
-- :mod:`~topspin_review.analysis.vision` — turn sampled frames into observations.
-- :mod:`~topspin_review.analysis.coaching` — turn observations into the coaching
-  report (report agent, tools, verification, retrieval of past sessions).
-- :mod:`~topspin_review.analysis.strategies` — the analysis modes (`analyze` /
-  `analyze_agentic`), the run machinery (`run_session`, `progress`) and each mode's
-  own prompt text.
+- :mod:`~topspin_review.analysis.stages.observe` — stage 1: video → observations.
+- :mod:`~topspin_review.analysis.stages.coach` — stage 2: observations → report.
+- :mod:`~topspin_review.analysis.pipeline` — the orchestrator: runs the stages in one
+  of two modes (`pipeline/strategies/`) and holds the run machinery.
 
-Each area owns its prompts; there are no shared modules at this level. Side-effect free.
+Side-effect free.
 """

@@ -2,7 +2,7 @@
 
 Both strategies build on this so the run recorder, the vision agent and the media
 dir live in one place. The vision agent's policy is in
-:mod:`topspin_review.analysis.vision.agent`; session only wires the run.
+:mod:`topspin_review.analysis.stages.observe.agent`; session only wires the run.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from topspin_review.analysis.vision.build_agent import build_agent as build_vision_agent
+from topspin_review.analysis.stages.observe.build_agent import build_agent as build_vision_agent
 from topspin_review.storage import runtime
 
 

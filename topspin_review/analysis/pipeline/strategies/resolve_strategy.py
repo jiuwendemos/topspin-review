@@ -2,16 +2,16 @@
 
 Callers obtain a strategy here (by name or via :func:`resolve`); they never
 import a concrete strategy module. To add a strategy, subclass
-:class:`~topspin_review.analysis.strategies.base.Strategy` and register an
+:class:`~topspin_review.analysis.pipeline.strategies.base.Strategy` and register an
 instance in ``STRATEGIES``.
 """
 
 from __future__ import annotations
 
 from topspin_review import config
-from topspin_review.analysis.strategies.agentic import AgenticStrategy
-from topspin_review.analysis.strategies.base import Strategy
-from topspin_review.analysis.strategies.deterministic import DeterministicStrategy
+from topspin_review.analysis.pipeline.strategies.agentic import AgenticStrategy
+from topspin_review.analysis.pipeline.strategies.base import Strategy
+from topspin_review.analysis.pipeline.strategies.deterministic import DeterministicStrategy
 
 DETERMINISTIC = "deterministic"
 AGENTIC = "agentic"

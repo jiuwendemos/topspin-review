@@ -77,37 +77,38 @@ backend/
 
 ### The analysis package
 
-`analysis/` is grouped by **business area**: understanding the video, producing the
-coaching report, and the analysis modes. The two **strategies** share a base class
-(`base.py`, template method): `analyze` prepares the clip (sample + measure),
-calls the mode-specific `_run`, then finalizes (usage, report patch, export) — so the
-deterministic and agentic modules only implement their real difference. Callers obtain
-a strategy from the `strategies` package (registry: `strategies.resolve(...)` /
-`get_strategy(name)`) and run `strategy.analyze(...)` — they never import a concrete
-strategy module.
+`analysis/` is a **pipeline** of two stages, run by two interchangeable
+**strategies**. The strategies share a base class (`base.py`, template method):
+`analyze` prepares the clip (sample + measure), calls the mode-specific `_run`, then
+finalizes (usage, report patch, export) — so the deterministic and agentic modules
+only implement their real difference. Callers obtain a strategy from the `pipeline`
+package (registry: `pipeline.resolve(...)` / `get_strategy(name)`) and run
+`strategy.analyze(pipeline.Params(...))` — they never import a concrete module.
 
 ```
 analysis/
-├── vision/                # video frames → observations
-│   ├── build_agent.py     #   build the vision DeepAgent
-│   ├── render_images.py   #   render/save the images the model reads
-│   ├── ask_agent.py       #   ask the vision agent + parse JSON
-│   ├── run_passes.py      #   the overview / detail / still passes
-│   └── prompts.py         #   vision prompt text
-├── coaching/              # observations → coaching report
-│   ├── build_agent.py     #   build the report DeepAgent
-│   ├── report_tools.py    #   get_profile / recent_reports / save_report
-│   ├── retrieve_reports.py#   lexical retrieval over past reports
-│   ├── verify_issues.py   #   prune issues the evidence doesn't support
-│   └── prompts.py         #   report / verify prompts + rubrics
-└── strategies/            # the analysis modes + run machinery
-    ├── base.py            #   Strategy base class (template) + shared steps
-    ├── params.py          #   Params: analyze() input + run state
-    ├── progress.py        #   thread-safe progress reporting
-    ├── run_session.py     #   run machinery: Runner, recorder, vision agent
-    ├── resolve_strategy.py#   STRATEGIES registry + get_strategy()/resolve()
-    ├── deterministic.py   #   default: measure → two-pass vision → write report
-    └── agentic.py         #   opt-in: the agent inspects the clip itself
+├── stages/                  # the two pipeline stages
+│   ├── observe/             #   stage 1: video frames → observations
+│   │   ├── build_agent.py     # build the vision DeepAgent
+│   │   ├── render_images.py   # render/save the images the model reads
+│   │   ├── ask_agent.py       # ask the vision agent + parse JSON
+│   │   ├── run_passes.py      # the overview / detail / still passes
+│   │   └── prompts.py         # vision prompt text
+│   └── coach/               #   stage 2: observations → coaching report
+│       ├── build_agent.py     # build the report DeepAgent
+│       ├── report_tools.py    # get_profile / recent_reports / save_report
+│       ├── retrieve_reports.py# lexical retrieval over past reports
+│       ├── verify_issues.py   # prune issues the evidence doesn't support
+│       └── prompts.py         # report / verify prompts + rubrics
+└── pipeline/                # the orchestrator: runs the stages in one of two modes
+    ├── params.py            #   Params: analyze() input + run state
+    ├── progress.py          #   thread-safe progress reporting
+    ├── run_session.py       #   run machinery: Runner, recorder, vision agent
+    └── strategies/          #   the interchangeable modes
+        ├── base.py          #     Strategy base class (template) + shared steps
+        ├── resolve_strategy.py  # STRATEGIES registry + get_strategy()/resolve()
+        ├── deterministic.py #     default mode: fixed measure → observe → coach
+        └── agentic.py       #     opt-in mode: the agent inspects the clip itself
 ```
 
 ## openjiuwen integration
@@ -121,11 +122,11 @@ only `topspin_review.backend`.
 - **Agent builder** — `backend.agent.builder.build(params)` is the single entry
   point: it builds (and instruments) the model, decorates tools, resolves rails and
   constructs the DeepAgent. The `backend.agent.params` dataclasses (`TextParams`,
-  `VisionParams`) describe the agent. `analysis/coaching/build_agent.build_agent` is the
+  `VisionParams`) describe the agent. `analysis/stages/coach/build_agent.build_agent` is the
   report policy over `TextParams`; the deterministic and agentic strategies both use
   it (the agentic one overrides the prompt, tools and iterations).
 - **Tools** — application code passes plain callables
-  (`analysis/coaching/report_tools.py`, the agentic strategy's `inspect_window`); the builder
+  (`analysis/stages/coach/report_tools.py`, the agentic strategy's `inspect_window`); the builder
   decorates them internally (auto-extracting name/description/schema from the
   function/docstring/signature). Nothing about tooling decoration is known outside
   `backend`. (External exposure is over MCP — `interfaces/mcp/server.py`, FastMCP.)
@@ -135,10 +136,10 @@ only `topspin_review.backend`.
   (`AgentRail`, `TokenBudgetRail`, `memory_rail()`) never leave `backend`.
 - **Runner** — `backend.agent.runner.run_agent`, and its callback-event bridge
   (`on_tool_calls` / `on_llm_output`) used by `backend.telemetry` traces.
-- **Vision** — `analysis/vision/agent.build_agent` builds (via the backend builder) a
+- **Vision** — `analysis/stages/observe/build_agent.build_agent` builds (via the backend builder) a
   DeepAgent whose model is the vision model, reading rendered images through the
   `read_file` tool (`SysOperationRail` + `enable_read_image_multimodal`).
-  `analysis/vision/passes.py` persists contact sheets / motion maps / frames and asks
+  `analysis/stages/observe/run_passes.py` persists contact sheets / motion maps / frames and asks
   the agent to read them.
 - **Telemetry** — the builder creates a run **Recorder** (`backend.telemetry.recorder`,
   internal) that captures usage/traces; callers never touch it directly. The UI shapes
@@ -156,10 +157,10 @@ parts (perception/domain/storage) run without openjiuwen installed.
 ```
 video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
       ─▶ perception.metrics.analyze (energy, shift, subject, mechanics, ball, pose)
-      ─▶ analysis.vision.coarse (contact sheet + perception.metrics.text) ─▶ windows
+      ─▶ analysis.stages.observe.coarse (contact sheet + perception.metrics.text) ─▶ windows
       ─▶ sampling.sample_window (zoom)
-      ─▶ analysis.vision.fine (frames + motion map + pose) ─▶ observations/signals
-      ─▶ analysis.coaching.build_agent (DeepAgent + tools) ─▶ report.json
+      ─▶ analysis.stages.observe.fine (frames + motion map + pose) ─▶ observations/signals
+      ─▶ analysis.stages.coach.build_agent (DeepAgent + tools) ─▶ report.json
       ─▶ reporting.export + domain.progress / domain.compare
 ```
 
