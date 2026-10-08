@@ -4,6 +4,12 @@ Record a session — table tennis, tennis, badminton, squash, padel — and get 
 
 **No third-party integrations.** A local video file goes in; a local report comes out. Two models are used: a **vision** model (`deepseek-v4-flash-vision-exp`) to read sampled frames, and a text model to write the coaching report.
 
+## Quick start
+
+New here? See **[QUICKSTART.md](QUICKSTART.md)** for copy-paste commands to install, run the
+Web UI / CLI, and run the offline checks. The rest of this file covers what it does, the
+architecture, and the knobs.
+
 ## What it does
 
 1. You point it at a video of a session.
@@ -66,10 +72,11 @@ Make a synthetic sample video (no recording needed):
 & $PY scripts\make_sample.py
 ```
 
-Self-check the analysis pipeline (no model calls):
+Offline checks (no model calls):
 
 ```powershell
-& $PY scripts\eval.py
+& $PY -m pytest -q                 # unit + architecture tests
+& $PY -m ruff check .              # lint
 ```
 
 ## Architecture
@@ -117,10 +124,19 @@ package is required.
 
 ## How it uses openjiuwen
 
-- `openjiuwen.core.foundation.llm.Model` — the vision model call (frames as `image_url` blocks) and the text model.
-- `openjiuwen.harness.create_deep_agent` — the agent that writes and saves the report.
-- `openjiuwen.core.foundation.tool.tool` — `get_profile`, `save_report`, `recent_reports`.
-- `openjiuwen.core.runner.Runner.run_agent` — runs the agent.
+All openjiuwen access is funnelled through `topspin_review.backend/` (the app never imports
+`openjiuwen` directly). Its façade is small: `build`, `TextParams`/`VisionParams`, `run_agent`,
+`run_text`, `ConfigError`, `configure_logging`. Internally:
+
+- `backend/agent/builder/` — model + agent construction (`build`), with `text` and `vision` variants.
+- `backend/agent/models/` — the underlying model-client construction.
+- `backend/agent/tools.py` — the generic openjiuwen `@tool` wrapper (`make_tool` / `make_tools`).
+- `backend/agent/rails.py` — optional openjiuwen rails (token-budget guard; memory).
+- `backend/agent/runner.py` — starts the openjiuwen `Runner`; `run_agent` / `run_text`.
+- `backend/telemetry/` — usage/trace recording (tokens, latency, callbacks).
+
+Application tools (`get_profile`, `recent_reports`, `save_report`) live with the stage that uses
+them: `analysis/stages/coach/report_tools.py`.
 
 ## Install
 

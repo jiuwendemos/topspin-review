@@ -13,7 +13,7 @@ interfaces  ──▶  analysis  ──▶  backend  ──▶  domain
 | Layer | Package | Responsibility | May depend on |
 |---|---|---|---|
 | Domain | `domain/` | Pure rules: report schema, progress, comparison, scoring, text rendering. No I/O, no third-party libs. | stdlib only |
-| Backend | `backend/` | Under-the-hood agentic machinery and provider access: openjiuwen integration (settings, models, agent, rails, tools, runner, logs), telemetry/observability, and one module per vision provider. Imports no application module. | stdlib, openjiuwen |
+| Backend | `backend/` | Under-the-hood agentic machinery and provider access: openjiuwen integration (settings, models, agent builder, rails, tools, runner, logs) and telemetry/observability. Imports no application module. | stdlib, openjiuwen |
 | Analysis | `analysis/` | The pipeline: stages (`measure`, `observe`, `coach`), the strategies that run them, and the shared video primitives (`video/`). | backend, storage, domain, reporting, config |
 | Storage | `storage/` | Runtime path layout, JSON helpers, per-video store, frame cache. | config |
 | Reporting | `reporting.py` | Outbound artifacts (Markdown/HTML/PDF). | domain, storage |
@@ -86,7 +86,7 @@ package (registry: `pipeline.resolve(...)` / `get_strategy(name)`) and run
 ```
 analysis/
 ├── progress.py              # run progress reporting (neutral leaf)
-├── video/                   # shared video-rendering primitives:
+├── video/                   # shared video measurement/rendering primitives:
 │                            #   metrics, imaging, pose, cvutil
 ├── stages/                  # the pipeline stages
 │   ├── measure/             #   stage 1: video → frames + measurements
