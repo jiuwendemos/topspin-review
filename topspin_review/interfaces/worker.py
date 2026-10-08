@@ -16,7 +16,7 @@ import time
 import traceback
 from pathlib import Path
 
-from topspin_review.analysis.pipeline.progress import Progress
+from topspin_review.analysis.progress import Progress
 from topspin_review.bootstrap import run as run_async
 from topspin_review.bootstrap import setup
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from topspin_review.perception import cvutil
+from topspin_review.analysis.video import cvutil
 
 _SIZE = (160, 90)
 _MIN_AREA = 2

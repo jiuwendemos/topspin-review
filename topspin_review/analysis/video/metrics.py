@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from topspin_review.perception import cvutil, pose
+from topspin_review.analysis.video import cvutil, pose
 
 _ANALYSIS_SIZE = (320, 180)
 

@@ -14,13 +14,14 @@ from typing import Any
 
 from topspin_review import config, reporting
 from topspin_review.analysis.pipeline.params import Params
-from topspin_review.analysis.pipeline.progress import Progress, tick
 from topspin_review.analysis.pipeline.strategies.base import Strategy
+from topspin_review.analysis.progress import Progress, tick
 from topspin_review.analysis.stages import observe
 from topspin_review.analysis.stages.coach import retrieve_reports, verify_issues
 from topspin_review.analysis.stages.coach.prompts import rubric_text
+from topspin_review.analysis.stages.measure import quality, sampling
+from topspin_review.analysis.video import imaging, metrics, pose
 from topspin_review.domain import report as report_schema
-from topspin_review.perception import imaging, metrics, pose, quality, sampling
 from topspin_review.storage import runtime, store
 
 

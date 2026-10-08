@@ -14,13 +14,13 @@ from typing import Any
 
 from topspin_review import config, reporting
 from topspin_review.analysis.pipeline.params import Params
-from topspin_review.analysis.pipeline.progress import Progress, tick
 from topspin_review.analysis.pipeline.run_session import start_session
+from topspin_review.analysis.progress import Progress, tick
 from topspin_review.analysis.stages.coach import build_agent
+from topspin_review.analysis.stages.measure import measure
 from topspin_review.backend import run_agent
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
-from topspin_review.perception import ball, metrics, sampling
 from topspin_review.storage import store
 
 
@@ -55,23 +55,13 @@ class Strategy:
         store.set_current_video(params.video_path)
         params.profile = store.get_profile()
 
-        tick(progress, "sampling frames", 8)
-        params.is_still = sampling.is_image(params.video_path)
-        if params.is_still:
-            params.meta, params.frames, params.timestamps = sampling.load_image(params.video_path)
-        else:
-            params.meta, params.frames, params.timestamps = sampling.sample_frames(
-                params.video_path, config.max_frames(), config.use_cache()
-            )
-        if not params.frames:
-            raise ValueError("No frames could be extracted from the input.")
+        measured = measure(params.video_path, params.region_box, progress)
+        params.meta = measured.meta
+        params.frames = measured.frames
+        params.timestamps = measured.timestamps
+        params.measured = measured.measured
+        params.is_still = measured.is_still
 
-        tick(progress, "measuring motion", 22)
-        steps = metrics.activity(params.frames, params.timestamps)
-        ball_info = ball.detect(params.frames, params.timestamps, steps)
-        params.measured = metrics.analyze(
-            params.frames, params.timestamps, ball=ball_info, region_box=params.region_box
-        )
         params.session = start_session(params.video_path)
 
     # -- shared report steps ---------------------------------------------- #

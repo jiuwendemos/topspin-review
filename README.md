@@ -78,7 +78,7 @@ Layered (hexagonal) — dependencies point inward only, enforced by
 `tests/unit/test_architecture.py`:
 
 ```
-interfaces → analysis → backend/perception → domain
+interfaces → analysis → backend → domain
         (storage / config are neutral leaves)
 ```
 
@@ -94,11 +94,10 @@ topspin-review/
 │   ├── config.py             # application settings (sampling, feature toggles)
 │   ├── reporting.py          # Markdown / HTML / PDF export
 │   ├── domain/               # pure: report, progress, compare, evaluate, render
-│   ├── perception/           # sampling, metrics, ball, pose, imaging, cvutil
 │   ├── backend/              # all agentic under-the-hood: settings, logs,
 │   │                         #   agent/ (builder, models, rails, tools, runner), telemetry/
-│   ├── analysis/             # stages/ (observe, coach) + pipeline/
-│   │                         #   (orchestrator + strategies/: deterministic, agentic)
+│   ├── analysis/             # stages/ (measure, observe, coach) + video/ (primitives)
+│   │                         #   + pipeline/ (orchestrator + strategies/: deterministic, agentic)
 │   ├── storage/              # runtime, cache, json_store, store
 │   └── interfaces/           # cli, api, service, mcp/, web/
 ├── tests/

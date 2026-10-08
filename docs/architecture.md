@@ -3,8 +3,8 @@
 Topspin Review is layered (hexagonal). Dependencies point **inward** only.
 
 ```
-interfaces  ──▶  analysis  ──▶  backend / perception  ──▶  domain
-                     │                  │
+interfaces  ──▶  analysis  ──▶  backend  ──▶  domain
+                     │
                      └────▶ storage / reporting
 ```
 
@@ -13,9 +13,8 @@ interfaces  ──▶  analysis  ──▶  backend / perception  ──▶  dom
 | Layer | Package | Responsibility | May depend on |
 |---|---|---|---|
 | Domain | `domain/` | Pure rules: report schema, progress, comparison, scoring, text rendering. No I/O, no third-party libs. | stdlib only |
-| Perception | `perception/` | Frames → measurements (sampling, metrics, ball, pose, imaging). | config, storage |
 | Backend | `backend/` | Under-the-hood agentic machinery and provider access: openjiuwen integration (settings, models, agent, rails, tools, runner, logs), telemetry/observability, and one module per vision provider. Imports no application module. | stdlib, openjiuwen |
-| Analysis | `analysis/` | Orchestration: the two analysis strategies, two-pass vision, prompts, and the report-writing agent (agent, tools, retrieval, verification). | perception, backend, storage, domain, reporting, config |
+| Analysis | `analysis/` | The pipeline: stages (`measure`, `observe`, `coach`), the strategies that run them, and the shared video primitives (`video/`). | backend, storage, domain, reporting, config |
 | Storage | `storage/` | Runtime path layout, JSON helpers, per-video store, frame cache. | config |
 | Reporting | `reporting.py` | Outbound artifacts (Markdown/HTML/PDF). | domain, storage |
 | Interfaces | `interfaces/` | Inbound adapters: CLI, HTTP API, MCP, Streamlit UI, service facade. | anything |
@@ -32,9 +31,8 @@ topspin_review/
 ├── config.py              # application settings only (sampling, feature toggles)
 ├── reporting.py           # Markdown / HTML / PDF export
 ├── domain/                # report, progress, compare, evaluate, render
-├── perception/            # sampling, metrics, ball, pose, imaging, cvutil
 ├── backend/               # provider access (see below)
-├── analysis/              # orchestration (see below)
+├── analysis/              # the pipeline (see below), incl. video/ measurement primitives
 ├── storage/               # runtime, cache, json_store, store
 └── interfaces/            # cli, api, service, mcp/, web/
 ```
@@ -77,7 +75,7 @@ backend/
 
 ### The analysis package
 
-`analysis/` is a **pipeline** of two stages, run by two interchangeable
+`analysis/` is a **pipeline** of three stages (measure → observe → coach), run by two interchangeable
 **strategies**. The strategies share a base class (`base.py`, template method):
 `analyze` prepares the clip (sample + measure), calls the mode-specific `_run`, then
 finalizes (usage, report patch, export) — so the deterministic and agentic modules
@@ -87,14 +85,22 @@ package (registry: `pipeline.resolve(...)` / `get_strategy(name)`) and run
 
 ```
 analysis/
-├── stages/                  # the two pipeline stages
-│   ├── observe/             #   stage 1: video frames → observations
+├── progress.py              # run progress reporting (neutral leaf)
+├── video/                   # shared video-rendering primitives:
+│                            #   metrics, imaging, pose, cvutil
+├── stages/                  # the pipeline stages
+│   ├── measure/             #   stage 1: video → frames + measurements
+│   │   ├── measure.py         # measure(): sample frames + compute metrics
+│   │   ├── sampling.py        # motion-weighted frame sampling
+│   │   ├── ball.py            # heuristic ball detection
+│   │   └── quality.py         # footage-quality gate
+│   ├── observe/             #   stage 2: frames → observations
 │   │   ├── build_agent.py     # build the vision DeepAgent
 │   │   ├── render_images.py   # render/save the images the model reads
 │   │   ├── ask_agent.py       # ask the vision agent + parse JSON
 │   │   ├── run_passes.py      # the overview / detail / still passes
 │   │   └── prompts.py         # vision prompt text
-│   └── coach/               #   stage 2: observations → coaching report
+│   └── coach/               #   stage 3: observations → coaching report
 │       ├── build_agent.py     # build the report DeepAgent
 │       ├── report_tools.py    # get_profile / recent_reports / save_report
 │       ├── retrieve_reports.py# lexical retrieval over past reports
@@ -102,7 +108,6 @@ analysis/
 │       └── prompts.py         # report / verify prompts + rubrics
 └── pipeline/                # the orchestrator: runs the stages in one of two modes
     ├── params.py            #   Params: analyze() input + run state
-    ├── progress.py          #   thread-safe progress reporting
     ├── run_session.py       #   run machinery: Runner, recorder, vision agent
     └── strategies/          #   the interchangeable modes
         ├── base.py          #     Strategy base class (template) + shared steps
@@ -150,15 +155,15 @@ only `topspin_review.backend`.
 - **Logging** — `backend.logs.configure` routes openjiuwen logging into `runtime/logs/`.
 
 Everything above is optional at import time (lazy imports), so the deterministic
-parts (perception/domain/storage) run without openjiuwen installed.
+parts (analysis.video / domain / storage) run without openjiuwen installed.
 
 ## Data flow
 
 ```
-video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
-      ─▶ perception.metrics.analyze (energy, shift, subject, mechanics, ball, pose)
-      ─▶ analysis.stages.observe.coarse (contact sheet + perception.metrics.text) ─▶ windows
-      ─▶ sampling.sample_window (zoom)
+video ─▶ analysis.stages.measure.sampling (motion-weighted, cached in storage.cache)
+      ─▶ analysis.video.metrics.analyze (energy, shift, subject, mechanics, ball, pose)
+      ─▶ analysis.stages.observe.coarse (contact sheet + analysis.video.metrics.text) ─▶ windows
+      ─▶ analysis.stages.measure.sampling.sample_window (zoom)
       ─▶ analysis.stages.observe.fine (frames + motion map + pose) ─▶ observations/signals
       ─▶ analysis.stages.coach.build_agent (DeepAgent + tools) ─▶ report.json
       ─▶ reporting.export + domain.progress / domain.compare
@@ -182,5 +187,6 @@ video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
 
 - New interface (e.g. gRPC) → add a module under `interfaces/`; reuse
   `interfaces.service`.
-- New perception signal → add to `perception/`, surface it through
-  `perception.metrics.analyze` and `perception.metrics.text`.
+- New video signal → add to `analysis/stages/measure/` (detection/sampling) or
+  `analysis/video/` (rendering), surface it through `analysis.video.metrics.analyze`
+  and `analysis.video.metrics.text`.

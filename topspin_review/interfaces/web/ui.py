@@ -283,10 +283,11 @@ def _video_info(path: str) -> dict:
         return {}
 
 
-def _footage_check(path: str) -> None:
-    from topspin_review.perception import sampling
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"}
 
-    if sampling.is_image(path):
+
+def _footage_check(path: str) -> None:
+    if Path(path).suffix.lower() in _IMAGE_EXTS:
         st.info("Single photo: you'll get feedback on your **posture**, not movement or footwork.")
         return
     info = _video_info(path)

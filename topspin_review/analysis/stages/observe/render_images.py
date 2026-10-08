@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from topspin_review.perception import imaging, metrics, pose
+from topspin_review.analysis.video import imaging, metrics, pose
 
 
 def save(image: Image.Image, media_dir: Path, name: str) -> str:

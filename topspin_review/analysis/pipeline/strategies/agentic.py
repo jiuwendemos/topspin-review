@@ -12,11 +12,12 @@ from datetime import date
 from typing import Any
 
 from topspin_review.analysis.pipeline.params import Params
-from topspin_review.analysis.pipeline.progress import Progress
 from topspin_review.analysis.pipeline.strategies.base import Strategy
+from topspin_review.analysis.progress import Progress
 from topspin_review.analysis.stages import observe
 from topspin_review.analysis.stages.coach import report_tools
-from topspin_review.perception import metrics, sampling
+from topspin_review.analysis.stages.measure import sampling
+from topspin_review.analysis.video import metrics
 
 AGENTIC_SYSTEM = """You are Topspin Review. You analyze a racket-sport session video
 yourself and write a coaching report.

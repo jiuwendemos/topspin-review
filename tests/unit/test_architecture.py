@@ -1,8 +1,8 @@
 """Enforce the layered dependency direction (architecture as a test).
 
 Dependencies may only point inward:
-    interfaces -> analysis -> backend / perception -> domain
-with ``observability``, ``storage`` and ``config`` as neutral leaves.
+    interfaces -> analysis -> backend -> domain
+with ``storage`` and ``config`` as neutral leaves.
 """
 
 from __future__ import annotations
@@ -17,11 +17,10 @@ TOP_LAYERS = {"reporting"}
 
 # For each layer, the app layers it must NOT import.
 FORBIDDEN: dict[str, set[str]] = {
-    "domain": {"perception", "analysis", "backend", "storage", "reporting", "interfaces"},
-    "perception": {"analysis", "backend", "interfaces"},
-    "backend": {"domain", "perception", "analysis", "reporting", "interfaces"},
-    "storage": {"domain", "perception", "analysis", "backend", "reporting", "interfaces"},
-    "reporting": {"perception", "analysis", "backend", "interfaces"},
+    "domain": {"analysis", "backend", "storage", "reporting", "interfaces"},
+    "backend": {"domain", "analysis", "reporting", "interfaces"},
+    "storage": {"domain", "analysis", "backend", "reporting", "interfaces"},
+    "reporting": {"analysis", "backend", "interfaces"},
     "analysis": {"interfaces"},
 }
 

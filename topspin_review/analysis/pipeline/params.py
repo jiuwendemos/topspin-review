@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from topspin_review.analysis.pipeline.progress import Progress
+from topspin_review.analysis.progress import Progress
 
 
 @dataclass

@@ -14,7 +14,7 @@ from PIL import Image
 
 from topspin_review.analysis.stages.observe import prompts, render_images
 from topspin_review.analysis.stages.observe.ask_agent import ask
-from topspin_review.perception import metrics
+from topspin_review.analysis.video import metrics
 
 
 def _duration(meta: dict, timestamps: list[float]) -> float:

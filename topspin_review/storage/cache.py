@@ -1,6 +1,6 @@
 """On-disk cache for sampled frames, keyed by file identity and sampling params.
 
-Kept separate from :mod:`topspin_review.perception.sampling` (which only decides
+Kept separate from :mod:`topspin_review.analysis.video.sampling` (which only decides
 *which* frames to read); this module owns the filesystem cache under
 ``runtime/data/cache/<video-stem>/``.
 """

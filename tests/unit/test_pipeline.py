@@ -7,10 +7,11 @@ from PIL import Image, ImageDraw
 
 from topspin_review import reporting as export
 from topspin_review.analysis.stages import observe
+from topspin_review.analysis.stages.measure import ball
+from topspin_review.analysis.video import cvutil, metrics
 from topspin_review.backend.telemetry import usage
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import evaluate, progress, report
-from topspin_review.perception import ball, cvutil, metrics
 
 
 def moving_frames(n: int = 8, step: int = 8) -> tuple[list[Image.Image], list[float]]:
@@ -207,7 +208,7 @@ def test_mcp_server_module_imports():
 
 
 def test_pose_graceful_without_mediapipe():
-    from topspin_review.perception import pose
+    from topspin_review.analysis.video import pose
 
     assert pose.summarize(None) == {}
     assert pose.overlay([], None) == []

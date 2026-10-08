@@ -3,7 +3,7 @@
 Installed via ``requirements.txt`` (``mediapipe``). When available, :func:`estimate`
 returns per-frame joint metrics (knee/elbow angles, stance width); otherwise the
 caller falls back to the dependency-free region proxy in
-:mod:`topspin_review.perception.metrics`.
+:mod:`topspin_review.analysis.video.metrics`.
 """
 
 from __future__ import annotations
