@@ -6,8 +6,7 @@
     result = await strategy.analyze(video_path, progress=...)
 """
 
-from topspin_review.analysis.strategies.base import AnalyzeFn, Strategy
-from topspin_review.analysis.strategies.registry import (
+from topspin_review.analysis.strategies.resolve_strategy import (
     AGENTIC,
     DETERMINISTIC,
     STRATEGIES,
@@ -15,6 +14,7 @@ from topspin_review.analysis.strategies.registry import (
     get_strategy,
     resolve,
 )
+from topspin_review.analysis.strategies.strategy import AnalyzeFn, Strategy
 
 __all__ = [
     "AGENTIC",

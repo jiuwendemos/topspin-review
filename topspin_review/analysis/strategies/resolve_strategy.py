@@ -3,15 +3,15 @@
 Callers obtain a strategy here (by name or via :func:`resolve`); they never
 import a concrete strategy module. To add a strategy, implement an async
 ``analyze(video_path, region_box=None, progress=None)`` and register a
-:class:`~topspin_review.analysis.strategies.base.Strategy` in ``STRATEGIES``.
+:class:`~topspin_review.analysis.strategies.strategy.Strategy` in ``STRATEGIES``.
 """
 
 from __future__ import annotations
 
 from topspin_review import config
 from topspin_review.analysis.strategies.agentic import analyze as _agentic
-from topspin_review.analysis.strategies.base import Strategy
 from topspin_review.analysis.strategies.deterministic import analyze as _deterministic
+from topspin_review.analysis.strategies.strategy import Strategy
 
 DETERMINISTIC = "deterministic"
 AGENTIC = "agentic"

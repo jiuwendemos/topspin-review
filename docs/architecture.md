@@ -46,7 +46,7 @@ system**: every openjiuwen import (no `from openjiuwen...` exists anywhere else)
 model/agent access, rails, and telemetry. `config.py` holds only *application*
 settings. Both text and vision go through agents built by the agent builder —
 there is no separate provider transport. The package exposes a small façade
-(`build`, `TextParams`/`VisionParams`, `run_agent`, `ConfigError`,
+(`build`, `TextParams`/`VisionParams`, `run_agent`, `run_text`, `ConfigError`,
 `configure_logging`); everything else is internal. Internally it's grouped by
 concern:
 
@@ -77,29 +77,31 @@ backend/
 
 ### The analysis package
 
-`analysis/` is split by role. The two **strategies** produce the same report
-shape; everything they share lives in `session.py` and `report/`, so there is one
-place for the Runner lifecycle, tracing, usage accounting, artifact writing and
-the DeepAgent construction. Callers obtain a strategy from the `strategies` package
-(registry + factory: `strategies.resolve(agentic=...)` / `get_strategy(name)`) and
-run `strategy.analyze(...)` — they never import a concrete strategy module.
+`analysis/` is grouped by **business area**: understanding the video, producing the
+coaching report, and the analysis modes. The two **strategies** produce the same
+report shape; everything they share lives in `run_session.py` and `coaching/`. Callers
+obtain a strategy from the `strategies` package (registry: `strategies.resolve(...)`
+/ `get_strategy(name)`) and run `strategy.analyze(...)` — they never import a
+concrete strategy module.
 
 ```
 analysis/
-├── strategies/            # strategy pattern: obtain one via strategies.resolve()/get_strategy()
-│   ├── base.py            #   Strategy contract (AnalyzeFn + Strategy)
-│   ├── registry.py        #   STRATEGIES registry + get_strategy()/resolve()
+├── vision/                # video frames → observations
+│   ├── build_agent.py     #   build the vision DeepAgent
+│   ├── render_images.py   #   render/save the images the model reads
+│   ├── ask_agent.py       #   ask the vision agent + parse JSON
+│   └── run_passes.py      #   the overview / detail / still passes
+├── coaching/              # observations → coaching report
+│   ├── build_agent.py     #   build the report DeepAgent
+│   ├── report_tools.py    #   get_profile / recent_reports / save_report
+│   ├── retrieve_reports.py#   lexical retrieval over past reports
+│   └── verify_issues.py   #   prune issues the evidence doesn't support
+├── strategies/            # the analysis modes
+│   ├── strategy.py        #   Strategy contract (AnalyzeFn + Strategy)
+│   ├── resolve_strategy.py#   STRATEGIES registry + get_strategy()/resolve()
 │   ├── deterministic.py   #   default: measure → two-pass vision → write report
 │   └── agentic.py         #   opt-in: the agent inspects the clip itself
-├── report/                # the report-writing layer
-│   ├── agent.py           #   build_agent() — the DeepAgent (reused by both strategies)
-│   ├── tools.py           #   get_profile / recent_reports / save_report
-│   ├── retrieval.py       #   lexical retrieval over past reports
-│   └── verification.py    #   prune issues the evidence doesn't support
-├── session.py             # shared run machinery: Runner, traces, usage, artifacts
-├── text_agent.py          # single-turn tool-less agent helper (verification, Q&A)
-├── vision.py              # two-pass vision model calls (coarse / fine / still)
-├── vision_telemetry.py    # recording wrapper: usage + call I/O around a transport backend
+├── run_session.py         # shared run machinery: Runner, recorder, vision agent
 ├── prompts.py             # all prompt text + metric rendering
 └── progress.py            # thread-safe progress reporting
 ```
@@ -115,11 +117,11 @@ only `topspin_review.backend`.
 - **Agent builder** — `backend.agent.builder.build(params)` is the single entry
   point: it builds (and instruments) the model, decorates tools, resolves rails and
   constructs the DeepAgent. The `backend.agent.params` dataclasses (`TextParams`,
-  `VisionParams`) describe the agent. `analysis/report/agent.build_agent` is the
+  `VisionParams`) describe the agent. `analysis/coaching/build_agent.build_agent` is the
   report policy over `TextParams`; the deterministic and agentic strategies both use
   it (the agentic one overrides the prompt, tools and iterations).
 - **Tools** — application code passes plain callables
-  (`analysis/report/tools.py`, the agentic strategy's `inspect_window`); the builder
+  (`analysis/coaching/report_tools.py`, the agentic strategy's `inspect_window`); the builder
   decorates them internally (auto-extracting name/description/schema from the
   function/docstring/signature). Nothing about tooling decoration is known outside
   `backend`. (External exposure is over MCP — `interfaces/mcp/server.py`, FastMCP.)
@@ -129,10 +131,11 @@ only `topspin_review.backend`.
   (`AgentRail`, `TokenBudgetRail`, `memory_rail()`) never leave `backend`.
 - **Runner** — `backend.agent.runner.run_agent`, and its callback-event bridge
   (`on_tool_calls` / `on_llm_output`) used by `backend.telemetry` traces.
-- **Vision** — `backend.agent.builder.build(VisionParams(...))` builds a DeepAgent
-  whose model is the vision model, reading rendered images through the `read_file`
-  tool (`SysOperationRail` + `enable_read_image_multimodal`). `analysis/vision.py`
-  persists contact sheets / motion maps / frames and asks the agent to read them.
+- **Vision** — `analysis/vision/agent.build_agent` builds (via the backend builder) a
+  DeepAgent whose model is the vision model, reading rendered images through the
+  `read_file` tool (`SysOperationRail` + `enable_read_image_multimodal`).
+  `analysis/vision/passes.py` persists contact sheets / motion maps / frames and asks
+  the agent to read them.
 - **Telemetry** — the builder creates a run **Recorder** (`backend.telemetry.recorder`,
   internal) that captures usage/traces; callers never touch it directly. The UI shapes
   it for display in `interfaces/web/timeline.py` (presentation, not backend).
@@ -152,7 +155,7 @@ video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
       ─▶ analysis.vision.coarse (contact sheet + prompts.metrics_text) ─▶ windows
       ─▶ sampling.sample_window (zoom)
       ─▶ analysis.vision.fine (frames + motion map + pose) ─▶ observations/signals
-      ─▶ analysis.report.agent (DeepAgent + tools) ─▶ report.json
+      ─▶ analysis.coaching.build_agent (DeepAgent + tools) ─▶ report.json
       ─▶ reporting.export + domain.progress / domain.compare
 ```
 

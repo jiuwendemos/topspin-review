@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from topspin_review.analysis import vision
 from topspin_review.analysis.prompts import VERIFY_PROMPT, VERIFY_SYSTEM
-from topspin_review.analysis.text_agent import run_text_agent
+from topspin_review.backend import run_text
 from topspin_review.domain import report as report_schema
 
 
@@ -20,7 +20,7 @@ async def verify(report: dict, observations: str, measured_text: str) -> dict:
     )
     evidence = f"{observations}\n{measured_text}"
     try:
-        text = await run_text_agent(VERIFY_SYSTEM, VERIFY_PROMPT.format(issues=listed, evidence=evidence))
+        text = await run_text(VERIFY_SYSTEM, VERIFY_PROMPT.format(issues=listed, evidence=evidence))
         data = vision.extract_json(text)
         keep = data.get("supported")
     except Exception:

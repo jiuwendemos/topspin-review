@@ -1,7 +1,10 @@
-"""Analysis orchestration.
+"""Analysis, grouped by business area.
 
-Entry points live in :mod:`topspin_review.analysis.strategies` (``analyze`` and
-``analyze_agentic``); the report-writing layer is :mod:`topspin_review.analysis.report`.
-Shared run machinery is in :mod:`topspin_review.analysis.session`. Kept side-effect
-free so importing the package stays cheap.
+- :mod:`~topspin_review.analysis.vision` — turn sampled frames into observations.
+- :mod:`~topspin_review.analysis.coaching` — turn observations into the coaching
+  report (report agent, tools, verification, retrieval of past sessions).
+- :mod:`~topspin_review.analysis.strategies` — the analysis modes (`analyze` /
+  `analyze_agentic`).
+
+Shared: ``prompts``, ``progress``, ``run_session``. Side-effect free.
 """

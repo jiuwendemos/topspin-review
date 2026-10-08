@@ -34,6 +34,26 @@ async def run_agent(agent: Any, query: str) -> Any:
     return await Runner.run_agent(agent, {"query": query})
 
 
+def _output_text(result: Any) -> str:
+    if result is None:
+        return ""
+    if isinstance(result, dict):
+        for key in ("output", "content", "answer", "result"):
+            value = result.get(key)
+            if isinstance(value, str):
+                return value
+        return str(result)
+    return getattr(result, "content", None) or str(result)
+
+
+async def run_text(system_prompt: str, user_prompt: str, *, max_iterations: int = 1) -> str:
+    """Run a single-turn, tool-less text agent and return its text output."""
+    from topspin_review.backend.agent.builder import TextParams, build
+
+    built = build(TextParams(system_prompt=system_prompt, tools=[], rails=[], max_iterations=max_iterations, record=False))
+    return _output_text(await run_agent(built.agent, user_prompt))
+
+
 def on_tool_calls(started: Callable, finished: Callable, error: Callable) -> bool:
     """Subscribe to tool lifecycle events. Returns ``False`` if unavailable."""
     try:

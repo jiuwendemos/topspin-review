@@ -95,10 +95,10 @@ topspin-review/
 │   ├── reporting.py          # Markdown / HTML / PDF export
 │   ├── domain/               # pure: report, progress, compare, evaluate, render
 │   ├── perception/           # sampling, metrics, ball, pose, imaging, cvutil
-│   ├── backend/              # all agentic under-the-hood: settings, models, agent,
-│   │                         #   rails, tools, runner, logs, observability
-│   ├── analysis/             # strategies/ (deterministic, agentic) + report/ (agent, tools, ...)
-│   │                         #   prompts, progress, vision, session (shared run machinery)
+│   ├── backend/              # all agentic under-the-hood: settings, logs,
+│   │                         #   agent/ (builder, models, rails, tools, runner), telemetry/
+│   ├── analysis/             # by business area: vision/ (frames→observations),
+│   │                         #   coaching/ (report agent, tools, verification), strategies/
 │   ├── storage/              # runtime, cache, json_store, store
 │   └── interfaces/           # cli, api, service, mcp/, web/
 ├── tests/

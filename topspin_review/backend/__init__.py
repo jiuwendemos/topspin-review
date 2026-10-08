@@ -4,6 +4,7 @@ The application-facing surface is small and explicit:
 
 - ``build`` + ``TextParams`` / ``VisionParams`` — construct agents.
 - ``run_agent`` — run a built agent (starts the Runner if needed).
+- ``run_text`` — run a single-turn, tool-less text prompt (verification, Q&A).
 - ``ConfigError`` — raised when backend config is missing/invalid.
 - ``configure_logging`` — route openjiuwen logging.
 
@@ -15,7 +16,7 @@ outside this package; no application module is imported by it.
 """
 
 from topspin_review.backend.agent.builder import TextParams, VisionParams, build
-from topspin_review.backend.agent.runner import run_agent
+from topspin_review.backend.agent.runner import run_agent, run_text
 from topspin_review.backend.logs import configure as configure_logging
 from topspin_review.backend.settings import ConfigError
 
@@ -26,4 +27,5 @@ __all__ = [
     "build",
     "configure_logging",
     "run_agent",
+    "run_text",
 ]

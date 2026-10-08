@@ -14,9 +14,10 @@ from typing import Any
 
 from topspin_review import config, reporting
 from topspin_review.analysis import prompts, vision
+from topspin_review.analysis.coaching import build_agent, retrieve_reports, verify_issues
 from topspin_review.analysis.progress import Progress, tick
-from topspin_review.analysis.report import build_agent, retrieval, verification
-from topspin_review.analysis.session import run_agent, start_session
+from topspin_review.analysis.run_session import start_session
+from topspin_review.backend import run_agent
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
 from topspin_review.domain import report as report_schema
@@ -162,7 +163,7 @@ async def analyze(
 
     related = ""
     if config.retrieval_enabled():
-        related = retrieval.context_text(all_reports, f"{profile.get('goal', '')} {observations}")
+        related = retrieve_reports.context_text(all_reports, f"{profile.get('goal', '')} {observations}")
 
     window_label = ", ".join(f"{w['start']}-{w['end']}s" for w in windows) or "none"
 
@@ -177,7 +178,7 @@ async def analyze(
     quality_note = "; ".join(clip_quality.get("warnings") or []) or "ok"
 
     tick(progress, "preparing report", 72)
-    agent = build_agent(rails=config.rails(), recorder=session.recorder)
+    agent = build_agent(rails=config.rails(), recorder=session.recorder).agent
     query = (
         f"Today is {date.today().isoformat()}. "
         f"Write my coaching report for a {profile.get('sport', 'table tennis')} session.\n"
@@ -224,7 +225,7 @@ async def analyze(
         report_schema.calibrate(report, clip_quality)
         if config.verify_reports():
             try:
-                await verification.verify(report, observations, prompts.metrics_text(measured))
+                await verify_issues.verify(report, observations, prompts.metrics_text(measured))
             except Exception:
                 pass
 

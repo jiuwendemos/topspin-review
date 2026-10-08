@@ -1,10 +1,8 @@
-"""Shared machinery for one analysis run.
+"""Shared run state for one analysis run.
 
-Both strategies — :mod:`topspin_review.analysis.strategies.deterministic` (the
-default pipeline) and :mod:`topspin_review.analysis.strategies.agentic` (the
-opt-in model-driven mode) — build on this so the backend Runner lifecycle and
-the run recorder live in exactly one place. The vision agent is built here too
-(from the backend agent builder).
+Both strategies build on this so the run recorder, the vision agent and the media
+dir live in one place. The vision agent's policy is in
+:mod:`topspin_review.analysis.vision.agent`; session only wires the run.
 """
 
 from __future__ import annotations
@@ -14,11 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from topspin_review.analysis import prompts
-from topspin_review.backend import VisionParams, build, run_agent
+from topspin_review.analysis.vision.build_agent import build_agent as build_vision_agent
 from topspin_review.storage import runtime
-
-__all__ = ["RunSession", "run_agent", "start_session"]
 
 
 @dataclass
@@ -70,18 +65,12 @@ class RunSession:
 
 
 def start_session(video_path: str) -> RunSession:
-    """Build the vision agent (and run recorder) for ``video_path``."""
+    """Wire the run for ``video_path`` (builds the vision agent + run recorder)."""
     media_dir = runtime.ARTIFACTS_DIR / f"{Path(video_path).stem}_media"
-    result = build(
-        VisionParams(
-            system_prompt=prompts.VISION_AGENT_SYSTEM,
-            workspace=str(runtime.ARTIFACTS_DIR),
-            media_dir=str(media_dir),
-        )
-    )
+    built = build_vision_agent(media_dir=str(media_dir))
     return RunSession(
         video_path=video_path,
-        recorder=result.recorder,
-        vision_agent=result.agent,
+        recorder=built.recorder,
+        vision_agent=built.agent,
         media_dir=media_dir,
     )

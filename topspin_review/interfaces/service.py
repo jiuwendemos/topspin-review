@@ -84,9 +84,9 @@ async def ask(stem: str, question: str) -> str:
     }
     prompt = f"Report:\n{json.dumps(context, ensure_ascii=False)}\n\nQuestion: {question}"
     try:
-        from topspin_review.analysis.text_agent import run_text_agent
+        from topspin_review.backend import run_text
 
-        return await run_text_agent(QA_SYSTEM, prompt)
+        return await run_text(QA_SYSTEM, prompt)
     except Exception as exc:  # noqa: BLE001
         return f"Could not answer: {exc}"
 

@@ -144,13 +144,13 @@ def test_export_markdown_and_html():
 
 
 def test_retrieval_context():
-    from topspin_review.analysis.report import retrieval
+    from topspin_review.analysis.coaching import retrieve_reports
 
     reports = [
         {"source": "a.mp4", "issues": [{"issue": "poor footwork and split step"}], "focus": "footwork"},
         {"source": "b.mp4", "issues": [{"issue": "late backswing"}], "focus": "preparation"},
     ]
-    ctx = retrieval.context_text(reports, "footwork split step", k=2)
+    ctx = retrieve_reports.context_text(reports, "footwork split step", k=2)
     assert "a.mp4" in ctx and "b.mp4" not in ctx
 
 

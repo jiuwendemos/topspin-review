@@ -15,10 +15,10 @@ from typing import Any
 
 from topspin_review import config, reporting
 from topspin_review.analysis import prompts, vision
+from topspin_review.analysis.coaching import build_agent, report_tools
 from topspin_review.analysis.progress import Progress, tick
-from topspin_review.analysis.report import build_agent
-from topspin_review.analysis.report import tools as report_tools
-from topspin_review.analysis.session import run_agent, start_session
+from topspin_review.analysis.run_session import start_session
+from topspin_review.backend import run_agent
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
 from topspin_review.perception import ball, metrics, sampling
@@ -108,7 +108,7 @@ async def analyze(
         system_prompt=prompts.AGENTIC_SYSTEM,
         tools=[*AGENTIC_TOOLS, *report_tools.ALL_TOOLS],
         max_iterations=25,
-    )
+    ).agent
 
     prev = domain_progress.summarize(store.get_reports())
     history = prev.get("text", "") if prev else "No previous report."
