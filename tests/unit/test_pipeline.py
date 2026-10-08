@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import numpy as np
 from PIL import Image, ImageDraw
 
-from topspin_review import backend as backends
 from topspin_review import reporting as export
 from topspin_review.analysis import vision
 from topspin_review.backend import observability as usage
@@ -181,11 +178,6 @@ def test_usage_extraction():
 
     assert usage.extract_usage(DictMsg())["total_tokens"] == 5
     assert usage.summarize([{"total_tokens": 5, "seconds": 1.0}])["total_tokens"] == 5
-
-
-def test_mock_backend_offline():
-    result = asyncio.run(backends.MockVisionBackend().complete([{"role": "user", "content": "attentive_windows"}]))
-    assert "attentive_windows" in result.text
 
 
 def test_service_describe():

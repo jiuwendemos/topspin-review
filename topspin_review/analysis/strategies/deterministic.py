@@ -136,22 +136,27 @@ async def analyze(
     artifact_paths = _save_artifacts(video_path, frames, timestamps, measured, region_box)
 
     session = start_session(video_path)
-    backend = session.backend
+    agent = session.vision_agent
+    media_dir = session.media_dir
     if is_still:
         tick(progress, "vision: reviewing image", 55)
         coarse_out = {"overall": "", "attentive_windows": [], "limitations": []}
         windows: list[dict] = []
         zoom_frames: list = []
         zoom_times: list[float] = []
-        fine_out = await vision.analyze_still(frames[0], profile, backend=backend)
+        fine_out = await vision.analyze_still(frames[0], profile, agent=agent, media_dir=media_dir)
     else:
         tick(progress, "vision: overview", 38)
-        coarse_out = await vision.coarse(meta, frames, timestamps, measured, profile, backend=backend)
+        coarse_out = await vision.coarse(
+            meta, frames, timestamps, measured, profile, agent=agent, media_dir=media_dir
+        )
         windows = _clean_windows(coarse_out.get("attentive_windows"), timestamps, config.max_windows())
         tick(progress, "vision: zoom", 52)
         zoom_frames, zoom_times = _zoom_frames(video_path, windows, config.zoom_frames())
         tick(progress, "vision: detail", 60)
-        fine_out = await vision.fine(frames, timestamps, measured, windows, zoom_frames, zoom_times, profile, backend=backend)
+        fine_out = await vision.fine(
+            frames, timestamps, measured, windows, zoom_frames, zoom_times, profile, agent=agent, media_dir=media_dir
+        )
     observations = vision.observations_text(coarse_out, fine_out)
 
     all_reports = store.get_reports()

@@ -78,8 +78,8 @@ Layered (hexagonal) — dependencies point inward only, enforced by
 `tests/unit/test_architecture.py`:
 
 ```
-interfaces → analysis → providers/perception → domain
-        (observability / storage / config are neutral leaves)
+interfaces → analysis → backend/perception → domain
+        (storage / config are neutral leaves)
 ```
 
 ```
@@ -96,7 +96,7 @@ topspin-review/
 │   ├── domain/               # pure: report, progress, compare, evaluate, render
 │   ├── perception/           # sampling, metrics, ball, pose, imaging, cvutil
 │   ├── backend/              # all agentic under-the-hood: settings, models, agent,
-│   │                         #   rails, tools, runner, logs, observability, providers/
+│   │                         #   rails, tools, runner, logs, observability
 │   ├── analysis/             # strategies/ (deterministic, agentic) + report/ (agent, tools, ...)
 │   │                         #   prompts, progress, vision, session (shared run machinery)
 │   ├── storage/              # runtime, cache, json_store, store
@@ -153,13 +153,8 @@ Compare two analyzed sessions, export, and serve:
 & $PY -m topspin_review.interfaces.mcp.server
 ```
 
-CI (`.github/workflows/ci.yml`) runs all three. Offline runs use the mock vision
-backend so no API key is needed:
-
-```powershell
-$env:VISION_BACKEND = "mock"
-& $PY -m topspin_review.interfaces.cli analyze runtime/data/sample.mp4
-```
+CI (`.github/workflows/ci.yml`) runs all three. Analysis requires a model endpoint
+(text + vision); the unit tests are offline (no model calls).
 
 Programmatic use:
 
@@ -176,7 +171,6 @@ result = analyze_video_sync("runtime/data/session.mp4")
 - `VISION_ZOOM_FRAMES` (default 6) — extra frames inside the windows the first pass picks.
 - `VISION_MAX_WINDOWS` (default 3) — how many zoom windows are allowed.
 - `VISION_CACHE` (default true) — cache sampled frames per video (keyed by path+mtime+size).
-- `VISION_BACKEND` (default `openai`) — set `mock` for a deterministic offline backend (tests).
 - `VISION_MAX_SECONDS` (default 0 = whole clip) — cap analysis for long videos.
 - `VISION_PROBE_BUDGET` (default 64) — frames read while locating motion-heavy windows.
 - `LLM_RETRIES` (default 2) — retries per vision call (timeout uses `LLM_TIMEOUT`).

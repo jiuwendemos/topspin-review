@@ -22,11 +22,6 @@ def _bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def vision_backend() -> str:
-    """Selected vision provider name (``openai`` or ``mock``)."""
-    return os.getenv("VISION_BACKEND", "openai")
-
-
 def model_provider() -> str:
     return os.getenv("MODEL_PROVIDER", "OpenAI")
 

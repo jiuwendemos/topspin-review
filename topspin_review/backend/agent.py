@@ -15,7 +15,7 @@ from typing import Any
 from topspin_review.backend import observability
 from topspin_review.backend import rails as backend_rails
 from topspin_review.backend import tools as backend_tools
-from topspin_review.backend.models import make_text_model
+from topspin_review.backend.models import make_text_model, make_vision_model
 
 
 def create_agent(
@@ -53,4 +53,38 @@ def create_agent(
         enable_task_loop=False,
         max_iterations=max_iterations,
         workspace=workspace,
+    )
+
+
+def create_vision_agent(
+    *,
+    system_prompt: str,
+    workspace: str,
+    model: Any = None,
+    max_iterations: int = 4,
+    usage: observability.UsageCollector | None = None,
+    trace: observability.CallTrace | None = None,
+) -> Any:
+    """Build a vision DeepAgent.
+
+    Its model is the vision model, which reads image files natively through the
+    ``read_file`` tool (mounted by the SysOperationRail; ``enable_read_image_multimodal=True``).
+    Callers persist images into ``workspace`` and ask the agent to read them.
+    """
+    from openjiuwen.harness import create_deep_agent
+
+    if model is None:
+        model = make_vision_model()
+        if usage is not None or trace is not None:
+            model = observability.attach(model, usage, trace, label="vision")
+
+    return create_deep_agent(
+        model=model,
+        system_prompt=system_prompt,
+        tools=[],
+        rails=[backend_rails.sys_operation_rail()],
+        enable_task_loop=False,
+        max_iterations=max_iterations,
+        workspace=workspace,
+        enable_read_image_multimodal=True,
     )

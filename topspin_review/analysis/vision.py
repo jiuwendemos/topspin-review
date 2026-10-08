@@ -1,22 +1,22 @@
-"""Two-pass vision analysis: a coarse overview, then a zoom into busy windows.
+"""Two-pass vision analysis via a vision DeepAgent.
 
-The vision model receives a compact contact sheet, the raw motion/posture metrics
-and a motion map. First it proposes the time windows worth a closer look; the
-agent re-samples those windows and the model returns structured observations with
-evidence timestamps and confidence. It is told never to invent measurements.
-Prompt text lives in :mod:`topspin_review.analysis.prompts`.
+The openjiuwen vision agent reads the rendered images (contact sheet, motion map,
+pose overlay, zoom frames) with its ``read_file`` tool (native multimodal) and
+returns structured JSON. Prompt text lives in
+:mod:`topspin_review.analysis.prompts`.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
+from typing import Any
 
 from PIL import Image
 
-from topspin_review import config
 from topspin_review.analysis import prompts
-from topspin_review.analysis.vision_telemetry import recording_backend
+from topspin_review.analysis.session import run_agent
 from topspin_review.perception import imaging, metrics, pose
 
 
@@ -44,20 +44,46 @@ def _duration(meta: dict, timestamps: list[float]) -> float:
     return round(max(timestamps), 2) if timestamps else 0.0
 
 
+def _output_text(result: Any) -> str:
+    if result is None:
+        return ""
+    if isinstance(result, dict):
+        for key in ("output", "content", "answer", "result"):
+            value = result.get(key)
+            if isinstance(value, str):
+                return value
+        return str(result)
+    return getattr(result, "content", None) or str(result)
+
+
+async def _ask(agent: Any, prompt: str) -> dict:
+    """Run the vision agent and parse its JSON reply."""
+    result = await run_agent(agent, prompt)
+    return extract_json(_output_text(result))
+
+
+def _save(image: Image.Image, media_dir: Path, name: str) -> str:
+    path = media_dir / name
+    imaging.save_png(image, path)
+    return str(path)
+
+
 async def coarse(
     meta: dict,
     frames: list[Image.Image],
     timestamps: list[float],
     measured: dict,
     profile: dict,
-    backend=None,
+    *,
+    agent: Any,
+    media_dir: Path,
 ) -> dict:
     """Overview pass: summarize the clip and propose windows to zoom into."""
     if not frames:
         return {"overall": "No frames could be extracted.", "attentive_windows": [], "limitations": []}
 
-    backend = backend or recording_backend()
     sheet = imaging.contact_sheet(frames, timestamps, cols=min(4, len(frames)))
+    sheet_path = _save(sheet, media_dir, "overview_sheet.png")
     prompt = prompts.COARSE_PROMPT.format(
         n=len(frames),
         sport=profile.get("sport", "table tennis"),
@@ -67,14 +93,7 @@ async def coarse(
         metrics=prompts.metrics_text(measured),
         duration=_duration(meta, timestamps),
     )
-    content = [
-        {"type": "text", "text": prompt},
-        {"type": "image_url", "image_url": {"url": imaging.to_data_url(sheet, max_width=config.max_width())}},
-    ]
-    text = await backend.complete(
-        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}], label="overview"
-    )
-    parsed = extract_json(text)
+    parsed = await _ask(agent, f"{prompt}\n\nFirst call read_file on: {sheet_path}")
     parsed.setdefault("overall", "")
     parsed.setdefault("attentive_windows", [])
     parsed.setdefault("limitations", [])
@@ -89,14 +108,30 @@ async def fine(
     zoom_frames: list[Image.Image],
     zoom_times: list[float],
     profile: dict,
-    backend=None,
+    *,
+    agent: Any,
+    media_dir: Path,
 ) -> dict:
     """Detail pass over the proposed windows; returns structured observations."""
     if not frames and not zoom_frames:
         return {"observations": "", "signals": [], "limitations": []}
 
-    backend = backend or recording_backend()
-    sheet = imaging.contact_sheet(frames, timestamps, cols=min(4, len(frames))) if frames else None
+    paths: list[str] = []
+    if frames:
+        sheet = imaging.contact_sheet(frames, timestamps, cols=min(4, len(frames)))
+        paths.append(_save(sheet, media_dir, "detail_sheet.png"))
+    if len(frames) >= 2:
+        mm = metrics.motion_map(frames)
+        if mm is not None:
+            paths.append(_save(mm, media_dir, "motion_map.png"))
+    if measured.get("pose") and frames:
+        annotated = pose.overlay(frames, measured["pose"])
+        if annotated:
+            pose_sheet = imaging.contact_sheet(annotated, timestamps, cols=min(4, len(annotated)))
+            paths.append(_save(pose_sheet, media_dir, "pose_sheet.png"))
+    for i, zoom in enumerate(zoom_frames):
+        paths.append(_save(zoom, media_dir, f"zoom_{i}.png"))
+
     rendered = ", ".join(f"[{w.get('start')}s-{w.get('end')}s]" for w in windows) or "none"
     prompt = prompts.FINE_PROMPT.format(
         z=len(zoom_frames),
@@ -106,60 +141,25 @@ async def fine(
         metrics=prompts.metrics_text(measured),
         windows=rendered,
     )
-
-    content: list[dict] = [{"type": "text", "text": prompt}]
-    if sheet is not None:
-        content.append(
-            {"type": "image_url", "image_url": {"url": imaging.to_data_url(sheet, max_width=config.max_width())}}
-        )
-    mm = metrics.motion_map(frames) if len(frames) >= 2 else None
-    if mm is not None:
-        content.append({"type": "text", "text": "Motion map (red = movement across the clip):"})
-        content.append({"type": "image_url", "image_url": {"url": imaging.to_data_url(mm, max_width=config.max_width())}})
-    if measured.get("pose"):
-        annotated = pose.overlay(frames, measured["pose"])
-        if annotated:
-            content.append({"type": "text", "text": "Pose skeleton overlay:"})
-            sheet_pose = imaging.contact_sheet(annotated, timestamps, cols=min(4, len(annotated)))
-            content.append(
-                {"type": "image_url", "image_url": {"url": imaging.to_data_url(sheet_pose, max_width=config.max_width())}}
-            )
-    if zoom_frames:
-        content.append(
-            {"type": "text", "text": f"Zoomed frames from the windows ({', '.join(f'{t:.2f}s' for t in zoom_times)}):"}
-        )
-        for url in imaging.frames_to_data_urls(zoom_frames, max_width=config.max_width()):
-            content.append({"type": "image_url", "image_url": {"url": url}})
-
-    text = await backend.complete(
-        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}], label="detail"
-    )
-    parsed = extract_json(text)
-    parsed.setdefault("observations", text or "")
+    files = "\n".join(f"read_file: {p}" for p in paths)
+    parsed = await _ask(agent, f"{prompt}\n\nRead these images:\n{files}")
+    parsed.setdefault("observations", "")
     parsed.setdefault("signals", [])
     parsed.setdefault("limitations", [])
     return parsed
 
 
-async def analyze_still(frame: Image.Image, profile: dict, backend=None) -> dict:
+async def analyze_still(frame: Image.Image, profile: dict, *, agent: Any, media_dir: Path) -> dict:
     """Single-image pass: describe the static posture only."""
-    backend = backend or recording_backend()
+    still_path = _save(frame, media_dir, "still.png")
     prompt = prompts.STILL_PROMPT.format(
         sport=profile.get("sport", "table tennis"),
         level=profile.get("level", "unknown"),
         hand=profile.get("dominant_hand", "right"),
         goal=profile.get("goal", "improve"),
     )
-    content = [
-        {"type": "text", "text": prompt},
-        {"type": "image_url", "image_url": {"url": imaging.to_data_url(frame, max_width=config.max_width())}},
-    ]
-    text = await backend.complete(
-        [{"role": "system", "content": prompts.VISION_SYSTEM}, {"role": "user", "content": content}],
-        label="reviewing image",
-    )
-    parsed = extract_json(text)
-    parsed.setdefault("observations", text or "")
+    parsed = await _ask(agent, f"{prompt}\n\nFirst call read_file on: {still_path}")
+    parsed.setdefault("observations", "")
     parsed.setdefault("signals", [])
     parsed.setdefault("limitations", [])
     return parsed

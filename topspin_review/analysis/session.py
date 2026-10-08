@@ -4,7 +4,7 @@ Both strategies — :mod:`topspin_review.analysis.strategies.deterministic` (the
 default pipeline) and :mod:`topspin_review.analysis.strategies.agentic` (the
 opt-in model-driven mode) — build on this so the openjiuwen Runner lifecycle,
 model/tool tracing, usage accounting and artifact writing live in exactly one
-place.
+place. The vision agent is built here too (from the backend agents file).
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from topspin_review.analysis.vision_telemetry import RecordingVisionBackend
-from topspin_review.backend import get_backend, observability, runner
+from topspin_review.analysis import prompts
+from topspin_review.backend import create_vision_agent, observability, runner
 from topspin_review.backend import settings as backend_settings
 from topspin_review.storage import runtime
 
@@ -32,17 +32,19 @@ async def run_agent(agent: Any, query: str) -> Any:
 
 @dataclass
 class RunSession:
-    """Tracing and vision backend for a single analysis run."""
+    """Tracing, the vision agent, and usage for a single analysis run."""
 
     video_path: str
     call_trace: observability.CallTrace
     tool_trace: observability.ToolTrace
-    backend: Any
+    vision_agent: Any
+    vision_usage: observability.UsageCollector
+    media_dir: Path
 
     def usage_summary(self, text_usage: observability.UsageCollector, callback_trace: Any = None) -> dict[str, Any]:
         """Combine vision + text usage into the report's ``usage`` block."""
-        vision_usage = self.backend.usage_summary() if hasattr(self.backend, "usage_summary") else {}
-        vision_calls = self.backend.usage_calls() if hasattr(self.backend, "usage_calls") else []
+        vision_usage = self.vision_usage.summary()
+        vision_calls = self.vision_usage.records()
         text = text_usage.summary()
         usage: dict[str, Any] = {
             "vision": vision_usage,
@@ -81,12 +83,26 @@ class RunSession:
 
 
 def start_session(video_path: str) -> RunSession:
-    """Install model/tool traces and build the vision backend for ``video_path``."""
+    """Install model/tool traces and build the vision agent for ``video_path``."""
+    media_dir = runtime.ARTIFACTS_DIR / f"{Path(video_path).stem}_media"
     call_trace = observability.CallTrace(
         record_io=backend_settings.save_call_io(),
-        media_dir=runtime.ARTIFACTS_DIR / f"{Path(video_path).stem}_media",
+        media_dir=media_dir,
     )
     tool_trace = observability.ToolTrace()
     tool_trace.install()
-    backend = RecordingVisionBackend(get_backend(), trace=call_trace)
-    return RunSession(video_path=video_path, call_trace=call_trace, tool_trace=tool_trace, backend=backend)
+    vision_usage = observability.UsageCollector()
+    vision_agent = create_vision_agent(
+        system_prompt=prompts.VISION_AGENT_SYSTEM,
+        workspace=str(runtime.ARTIFACTS_DIR),
+        usage=vision_usage,
+        trace=call_trace,
+    )
+    return RunSession(
+        video_path=video_path,
+        call_trace=call_trace,
+        tool_trace=tool_trace,
+        vision_agent=vision_agent,
+        vision_usage=vision_usage,
+        media_dir=media_dir,
+    )

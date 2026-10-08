@@ -43,26 +43,20 @@ topspin_review/
 
 `backend/` is the **single home for everything under-the-hood of the agentic
 system**: every openjiuwen import (no `from openjiuwen...` exists anywhere else),
-provider/model access, rails, and telemetry (observability). `config.py` holds only
-*application* settings. Vision providers are **pure transport**: they return a
-`VisionResult` and import no application module — usage accounting, call tracing
-and event sequencing happen in `analysis/vision_telemetry.py`.
+model/agent access, rails, and telemetry (observability). `config.py` holds only
+*application* settings. Both text and vision go through agents built by the agents
+file — there is no separate provider transport.
 
 ```
 backend/
-├── settings.py            # backend env: provider/keys, model names, timeouts, embeddings, rails/budget/tracing
+├── settings.py            # backend env: keys, model names, timeouts, embeddings, budget/tracing
 ├── models.py              # make_text_model() / make_vision_model() — openjiuwen client construction
-├── agent.py               # the agents file: create_agent() builds + instruments the model, then the DeepAgent
+├── agent.py               # the agents file: create_agent() (text) / create_vision_agent() (multimodal)
 ├── rails.py               # AgentRail base + TokenBudgetRail + memory_rail() + resolve(names)
 ├── observability.py       # usage/trace capture + the execution timeline
 ├── tools.py               # ToolSpec + decorate() (openjiuwen tool decoration)
 ├── runner.py              # Runner lifecycle, run_agent(), callback-event bridge
-├── logs.py                # route openjiuwen logging to a directory
-└── providers/             # one module per vision provider
-    ├── base.py            #   VisionBackend protocol + VisionResult
-    ├── openai.py          #   OpenAI-compatible (default)
-    ├── mock.py            #   offline, deterministic (tests)
-    └── registry.py        #   PROVIDERS registry + get_backend()
+└── logs.py                # route openjiuwen logging to a directory
 ```
 
 ### The analysis package
@@ -102,9 +96,10 @@ only `topspin_review.backend`.
 - **Model clients** — `backend.models` is **internal** (`make_text_model` /
   `make_vision_model`, lazy `openjiuwen...Model`, reading `backend.settings`). External
   code never imports it.
-- **Agent** — `backend.agent.create_agent` is the agents file: it builds (and
-  instruments) the model, resolves rails from the names it is given, then builds the
-  DeepAgent. `analysis/report/agent.build_agent` is the report policy over it; the
+- **Agent** — `backend.agent.create_agent` (text) and `create_vision_agent`
+  (multimodal vision) are the agents file: they build (and instrument) the model,
+  resolve rails from names and decorate tools, then build the DeepAgent.
+  `analysis/report/agent.build_agent` is the report policy over `create_agent`; the
   deterministic and agentic strategies both use it (the agentic one overrides the
   prompt, tools and iterations).
 - **Tools** — application code defines plain callables + `backend.ToolSpec`
@@ -118,15 +113,15 @@ only `topspin_review.backend`.
   (`AgentRail`, `TokenBudgetRail`, `memory_rail()`) never leave `backend`.
 - **Runner** — `backend.runner.start` / `run_agent`, and its callback-event bridge
   (`on_tool_calls` / `on_llm_output`) used by `backend.observability` traces.
-- **Telemetry** — `backend.observability` captures usage/traces and builds the
-  execution timeline; `analysis/vision_telemetry.py` records the vision calls (the
-  text model is recorded via `backend.observability.attach`).
-- **Agents only.** Application code never calls `Model.invoke` directly; every text
-  LLM interaction goes through an openjiuwen agent + `Runner` — the report writer
-  (`analysis/report/agent`), and the tool-less single-turn helper
-  (`analysis/text_agent`) used by verification and report Q&A. The one exception is
-  the vision provider (`backend/providers/openai.py`), which is the framework
-  transport that carries image parts to the model.
+- **Vision** — `backend.agent.create_vision_agent` builds a DeepAgent whose model is
+  the vision model, reading rendered images through the `read_file` tool
+  (`SysOperationRail` + `enable_read_image_multimodal`). `analysis/vision.py` persists
+  contact sheets / motion maps / frames and asks the agent to read them.
+- **Telemetry** — `backend.observability` captures usage/traces (via
+  `observability.attach` on the agent models) and builds the execution timeline.
+- **Agents only.** Application code never calls `Model.invoke` directly; every model
+  interaction — text, verification, Q&A, and vision — goes through an openjiuwen
+  agent + `Runner` built by the backend agents file.
 - **Logging** — `backend.logs.configure` routes openjiuwen logging into `runtime/logs/`.
 
 Everything above is optional at import time (lazy imports), so the deterministic
@@ -149,8 +144,8 @@ video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
 - **No import side effects.** `__init__.py` only sets `__version__`. Logging is
   configured by `bootstrap.setup()`, called by every interface entry point (and by
   `conftest.py` in tests) so openjiuwen logs always land in `runtime/logs/`.
-- **Ports & adapters.** `backend/providers/` implements the vision port; swap
-  `VISION_BACKEND=mock` for offline runs. Provider selection lives in `backend.settings`.
+- **Agents, not providers.** Text and vision both go through the backend agents file;
+  there is no separate provider transport to swap.
 - **Single source of paths.** All generated state lives under `runtime/` via
   `storage.runtime` (`runtime.DATA_DIR`, `ARTIFACTS_DIR`, `CACHE_DIR`, ...).
 - **Schema at the boundary.** `domain.report.normalize/validate` runs inside the
@@ -160,7 +155,6 @@ video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
 
 ## Extending
 
-- New model provider → add a module under `backend/providers/` and register it in `PROVIDERS`.
 - New interface (e.g. gRPC) → add a module under `interfaces/`; reuse
   `interfaces.service`.
 - New perception signal → add to `perception/`, surface it through

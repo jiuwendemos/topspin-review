@@ -51,7 +51,8 @@ async def inspect_window(start: float, end: float, frame_count: int = 4) -> str:
         frames,
         times,
         state["profile"],
-        backend=state["backend"],
+        agent=state["agent"],
+        media_dir=state["media_dir"],
     )
     return vision.observations_text({"overall": ""}, out) + "\n" + prompts.metrics_text(window_metrics)
 
@@ -115,7 +116,8 @@ async def analyze(
             "timestamps": timestamps,
             "metrics": measured,
             "profile": profile,
-            "backend": session.backend,
+            "agent": session.vision_agent,
+            "media_dir": session.media_dir,
         }
     )
 

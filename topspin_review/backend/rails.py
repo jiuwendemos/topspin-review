@@ -27,6 +27,13 @@ def memory_rail(embedding_config: Any) -> Any:
     return MemoryRail(embedding_config=embedding_config)
 
 
+def sys_operation_rail() -> Any:
+    """The openjiuwen SysOperationRail (mounts ``read_file`` etc.; required for vision)."""
+    from openjiuwen.harness.rails import SysOperationRail
+
+    return SysOperationRail()
+
+
 class TokenBudgetRail(AgentRail):
     """Force-finish the run once counted tokens exceed ``budget``.
 
