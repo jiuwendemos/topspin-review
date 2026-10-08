@@ -208,9 +208,9 @@ def _section(label: str) -> None:
 # Background analysis + progress
 #
 # The analysis runs in its own process (see topspin_review.interfaces.worker).
-# In-process runs collided with Streamlit's module handling: openjiuwen's runner
+# In-process runs collided with Streamlit's module handling: the backend runner
 # spawns subprocesses, and Streamlit's script module caused the spawned child to
-# re-import openjiuwen as a second copy, breaking pickling of message objects.
+# re-import the backend as a second copy, breaking pickling of message objects.
 # The worker streams progress to a JSON file that we poll here.
 # --------------------------------------------------------------------------- #
 def _start_worker(target: Path, *, agentic: bool, box) -> None:

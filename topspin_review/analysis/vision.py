@@ -1,6 +1,6 @@
 """Two-pass vision analysis via a vision DeepAgent.
 
-The openjiuwen vision agent reads the rendered images (contact sheet, motion map,
+The backend vision agent reads the rendered images (contact sheet, motion map,
 pose overlay, zoom frames) with its ``read_file`` tool (native multimodal) and
 returns structured JSON. Prompt text lives in
 :mod:`topspin_review.analysis.prompts`.

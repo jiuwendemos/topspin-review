@@ -1,8 +1,8 @@
 """Embedding surface: run the analysis programmatically.
 
 ``analyze_video`` (async) imports the pipeline lazily so importing this module does
-not pull in the openjiuwen harness. ``describe`` is the single source of truth for
-the ``analyze_sport_video`` tool contract (used by the MCP tool and server).
+not pull in the heavy backend. ``describe`` is the single source of truth for
+the ``analyze_sport_video`` tool contract (used by the MCP server).
 """
 
 from __future__ import annotations

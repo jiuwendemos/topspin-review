@@ -190,18 +190,6 @@ def test_service_describe():
     assert service.parse_region_box("bad") is None
 
 
-def test_mcp_tool_defined():
-    import pytest
-
-    try:
-        from topspin_review.interfaces.mcp import tools as mcp_tools
-    except Exception as exc:  # openjiuwen not importable
-        pytest.skip(f"openjiuwen unavailable: {exc}")
-    assert mcp_tools.ALL_TOOLS, "no tools registered"
-    names = {getattr(t, "card", None) and t.card.name for t in mcp_tools.ALL_TOOLS}
-    assert "analyze_sport_video" in names
-
-
 def test_api_routes_registered():
     import pytest
 

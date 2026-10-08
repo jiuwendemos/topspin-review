@@ -1,4 +1,7 @@
-"""Stdio MCP server exposing ``analyze_sport_video``.
+"""Stdio MCP server exposing ``analyze_sport_video`` to MCP clients.
+
+Wrapping is MCP-native (FastMCP's ``@server.tool``); the tool decorator stays
+inside the backend.
 
     pip install -r requirements.txt
     python -m topspin_review.interfaces.mcp.server

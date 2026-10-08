@@ -1,7 +1,7 @@
 """Standalone analysis worker (run in its own process).
 
 The Streamlit app launches this so the analysis runs with a clean ``__main__`` —
-openjiuwen's runner spawns subprocesses, and Streamlit's script module caused a
+the backend runner spawns subprocesses, and Streamlit's script module caused a
 duplicate-import/pickle error. Progress is streamed to a JSON file the UI polls.
 
     python -m topspin_review.interfaces.worker <video> --progress <path> [--agentic] [--box l,t,r,b]

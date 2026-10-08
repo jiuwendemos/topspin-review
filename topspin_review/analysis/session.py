@@ -2,7 +2,7 @@
 
 Both strategies — :mod:`topspin_review.analysis.strategies.deterministic` (the
 default pipeline) and :mod:`topspin_review.analysis.strategies.agentic` (the
-opt-in model-driven mode) — build on this so the openjiuwen Runner lifecycle and
+opt-in model-driven mode) — build on this so the backend Runner lifecycle and
 the run recorder live in exactly one place. The vision agent is built here too
 (from the backend agent builder).
 """

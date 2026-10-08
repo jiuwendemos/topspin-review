@@ -47,7 +47,7 @@ model/agent access, rails, and telemetry (observability). `config.py` holds only
 *application* settings. Both text and vision go through agents built by the agent
 builder — there is no separate provider transport. The package exposes a small
 façade (`build`, `TextParams`/`VisionParams`, `run_agent`, `ConfigError`,
-`configure_logging`, `make_tool`); everything else is internal.
+`configure_logging`); everything else is internal.
 
 ```
 backend/
@@ -107,9 +107,9 @@ only `topspin_review.backend`.
   it (the agentic one overrides the prompt, tools and iterations).
 - **Tools** — application code passes plain callables
   (`analysis/report/tools.py`, the agentic strategy's `inspect_window`); the builder
-  decorates them (`backend.make_tools`, auto-extracting name/description/schema from
-  the function/docstring/signature). `interfaces/mcp/tools.py` uses `backend.make_tool`
-  to publish a callable as a tool. No tool spec is built or passed outside `backend`.
+  decorates them internally (auto-extracting name/description/schema from the
+  function/docstring/signature). Nothing about tooling decoration is known outside
+  `backend`. (External exposure is over MCP — `interfaces/mcp/server.py`, FastMCP.)
 - **Rails** — application code only names rails (`config.rails()`, e.g.
   `["token_budget", "memory"]`); `backend.agent_builder.build` resolves the names via
   `backend.rails.resolve()` and builds/attaches the rails. The implementations

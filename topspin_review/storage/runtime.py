@@ -5,7 +5,7 @@ root holds only source:
 
     runtime/
     ├── workspace/   # DeepAgent workspace scaffold (memory/, todo/, ...)
-    ├── logs/        # openjiuwen logs
+    ├── logs/        # agent logs
     └── data/        # local JSON state, caches, artifacts
 """
 

@@ -163,7 +163,7 @@ from topspin_review.interfaces.service import analyze_video_sync
 result = analyze_video_sync("runtime/data/session.mp4")
 ```
 
-`mcp_tools.analyze_sport_video` exposes the same as an openjiuwen `@tool`.
+`interfaces/mcp/server.py` exposes the analysis as an MCP tool (`analyze_sport_video`).
 
 ## Knobs (`.env`)
 

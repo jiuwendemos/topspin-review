@@ -1,6 +1,6 @@
 """Single-shot text agent helper.
 
-Every text LLM interaction goes through an openjiuwen agent + Runner (never a
+Every text LLM interaction goes through a backend agent + Runner (never a
 direct ``Model.invoke``). This covers the tool-less, one-turn cases: report
 verification and report Q&A.
 """

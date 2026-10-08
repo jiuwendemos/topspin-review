@@ -77,7 +77,7 @@ def retrieval_enabled() -> bool:
 
 
 def rails() -> list[str]:
-    """Names of the openjiuwen rails to enable on report agents (``RAILS`` env).
+    """Names of the backend rails to enable on report agents (``RAILS`` env).
 
     ``true``/``false`` toggle the default set; otherwise a comma-separated list of
     names (known: ``token_budget``, ``memory``). The rails themselves are built by

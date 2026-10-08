@@ -1,9 +1,8 @@
-"""openjiuwen tool decoration.
+"""openjiuwen tool decoration (internal).
 
-Application code passes plain callables; :func:`make_tool` exposes one as an
-openjiuwen tool (used when an interface must publish a capability as a tool), and
-the agent builder uses :func:`make_tools` internally. Metadata (name, description,
-input schema) is auto-extracted from the function name / docstring / signature.
+The agent builder passes plain callables through :func:`make_tools`; metadata
+(name, description, input schema) is auto-extracted from the function name /
+docstring / signature. Nothing here is part of the public `backend` API.
 """
 
 from __future__ import annotations
