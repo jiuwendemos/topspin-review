@@ -1,9 +1,9 @@
-"""Parameters for :mod:`topspin_review.backend.agent_builder`.
+"""Parameters for :mod:`topspin_review.backend.agent.builder`.
 
 Callers describe the agent they want with one of these dataclasses and hand it to
-:func:`topspin_review.backend.agent_builder.build`. Nothing else (models, rails,
-tools, decoration, observability) is passed separately — the params and the
-builder do the whole work.
+:func:`topspin_review.backend.agent.builder.build`. Nothing else (models, rails,
+tools, decoration, telemetry) is passed separately — the params and the builder do
+the whole work.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ class Params:
     system_prompt: str
     workspace: str | None = None
     max_iterations: int = 15
-    model: Any = None
     record: bool = True
     """Capture usage + call/tool traces for this agent (built by the builder)."""
     media_dir: str | None = None

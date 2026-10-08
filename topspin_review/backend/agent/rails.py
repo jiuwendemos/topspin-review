@@ -3,7 +3,7 @@ and the name → rail resolution used by the agents file.
 
 Rails are under-the-hood machinery. Application code selects rails only by *name*
 (via config); it never constructs them — :func:`resolve` builds the named rails
-here and :func:`topspin_review.backend.agent_builder.build` attaches them.
+here and :func:`topspin_review.backend.agent.builder.build` attaches them.
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from topspin_review.backend import observability
 from topspin_review.backend import settings as backend_settings
+from topspin_review.backend.telemetry.usage import extract_usage
 
 try:  # openjiuwen is provided by the host environment
     from openjiuwen.core.single_agent.rail.base import AgentRail
@@ -64,7 +64,7 @@ class TokenBudgetRail(AgentRail):
 
 
 def _count_tokens(response: Any) -> int:
-    return int(observability.extract_usage(response).get("total_tokens", 0) or 0)
+    return int(extract_usage(response).get("total_tokens", 0) or 0)
 
 
 def _token_budget_rail() -> Any | None:

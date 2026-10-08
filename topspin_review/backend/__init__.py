@@ -7,16 +7,16 @@ The application-facing surface is small and explicit:
 - ``ConfigError`` — raised when backend config is missing/invalid.
 - ``configure_logging`` — route openjiuwen logging.
 
-Everything else in ``backend/`` (settings, models, rails, observability, tools
-internals, runner, logs, agent_builder) is an implementation detail and is only
-imported inside ``backend``. No ``from openjiuwen...`` import exists outside this
-package; no application module is imported by it.
+Internally, ``backend/`` is grouped by concern: ``agent/`` (builder, params,
+models, rails, tools, runner) and ``telemetry/`` (usage, traces, recorder), with
+``settings.py`` and ``logs.py`` at the root. Everything there is an implementation
+detail, imported only inside ``backend``. No ``from openjiuwen...`` import exists
+outside this package; no application module is imported by it.
 """
 
-from topspin_review.backend.agent_builder import build
-from topspin_review.backend.agent_builder_params import TextParams, VisionParams
+from topspin_review.backend.agent.builder import TextParams, VisionParams, build
+from topspin_review.backend.agent.runner import run_agent
 from topspin_review.backend.logs import configure as configure_logging
-from topspin_review.backend.runner import run_agent
 from topspin_review.backend.settings import ConfigError
 
 __all__ = [

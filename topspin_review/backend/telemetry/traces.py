@@ -1,4 +1,4 @@
-"""Token/latency usage capture shared by the vision backend and the text agent."""
+"""Model-call I/O tracing, tool-call tracing and the framework callback trace."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from topspin_review.backend.telemetry.usage import extract_usage, summarize
+
 # A process-wide monotonic sequence assigned when an event *starts*, so model
 # and tool calls can be ordered exactly even when their timestamps tie.
 _SEQ = itertools.count(1)
@@ -19,72 +21,6 @@ _SEQ_LOCK = threading.Lock()
 def next_seq() -> int:
     with _SEQ_LOCK:
         return next(_SEQ)
-
-_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
-
-_ALIASES = {
-    "prompt_tokens": ("prompt_tokens", "input_tokens"),
-    "completion_tokens": ("completion_tokens", "output_tokens"),
-    "total_tokens": ("total_tokens",),
-}
-
-
-def _get(usage: Any, names: tuple[str, ...]) -> Any:
-    for name in names:
-        value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
-        if value is not None:
-            return value
-    return None
-
-
-def extract_usage(result: Any) -> dict:
-    """Best-effort token extraction from a model result.
-
-    openjiuwen exposes ``usage_metadata`` on the AssistantMessage; OpenAI-style
-    clients use ``usage``. Cache counters (DeepSeek ``prompt_cache_hit_tokens``,
-    OpenAI ``prompt_tokens_details.cached_tokens``, Anthropic cache fields) are
-    captured too.
-    """
-    usage = (
-        getattr(result, "usage_metadata", None)
-        or getattr(result, "usage", None)
-        or getattr(result, "token_usage", None)
-    )
-    if usage is None:
-        return {}
-    out: dict = {}
-    for key, names in _ALIASES.items():
-        value = _get(usage, names)
-        if value is not None:
-            out[key] = value
-    if "total_tokens" not in out and ("prompt_tokens" in out or "completion_tokens" in out):
-        out["total_tokens"] = int(out.get("prompt_tokens", 0)) + int(out.get("completion_tokens", 0))
-
-    cached = _get(usage, ("prompt_cache_hit_tokens", "cache_read_input_tokens", "cached_tokens"))
-    if cached is None:
-        details = _get(usage, ("prompt_tokens_details", "prompt_token_details"))
-        if details is not None:
-            cached = _get(details, ("cached_tokens",))
-    if cached is not None:
-        out["cached_tokens"] = int(cached)
-    miss = _get(usage, ("prompt_cache_miss_tokens",))
-    if miss is not None:
-        out["cache_miss_tokens"] = int(miss)
-    created = _get(usage, ("cache_creation_input_tokens",))
-    if created is not None:
-        out["cache_creation_tokens"] = int(created)
-
-    model = getattr(result, "model", None) or getattr(result, "model_name", None) or _get(usage, ("model",))
-    if model:
-        out["model"] = str(model)
-    return out
-
-
-def summarize(usages: list[dict]) -> dict:
-    totals = {k: sum(int(u.get(k, 0) or 0) for u in usages) for k in _KEYS}
-    seconds = round(sum(float(u.get("seconds", 0.0) or 0.0) for u in usages), 2)
-    cached = sum(int(u.get("cached_tokens", 0) or 0) for u in usages)
-    return {"calls": len(usages), "seconds": seconds, "cached_tokens": cached, **totals}
 
 
 def _clip(text: Any, limit: int | None = 8000) -> str:
@@ -176,6 +112,51 @@ def sanitize_messages(messages: Any, limit: int | None = 8000) -> list[dict]:
     return out
 
 
+def _as_text(value: Any, limit: int | None = 4000) -> str:
+    if isinstance(value, (dict, list, tuple)):
+        try:
+            return _clip(json.dumps(value, ensure_ascii=False, default=str, indent=2), limit)
+        except Exception:
+            pass
+    return _clip(value, limit)
+
+
+def _tool_calls(raw: Any) -> list[dict]:
+    out = []
+    for call in raw or []:
+        if isinstance(call, dict):
+            name, arguments = call.get("name"), call.get("arguments")
+        else:
+            name, arguments = getattr(call, "name", None), getattr(call, "arguments", None)
+        entry: dict = {"name": str(name or "")}
+        if arguments:
+            entry["arguments"] = _clip(arguments, 2000)
+        out.append(entry)
+    return out
+
+
+_INTERNAL_ARGS = {"session", "self", "cls", "ctx", "context"}
+
+
+def _tool_arguments(inputs: Any) -> str:
+    try:
+        args, kwargs = inputs
+        kwargs = {
+            key: value
+            for key, value in (kwargs or {}).items()
+            if key not in _INTERNAL_ARGS and isinstance(value, (str, int, float, bool, list, dict, type(None)))
+        }
+        if not args:
+            payload: Any = kwargs
+        elif not kwargs:
+            payload = list(args)
+        else:
+            payload = {"args": [a for a in args if isinstance(a, (str, int, float, bool, list, dict))], "kwargs": kwargs}
+        return _as_text(payload, 4000)
+    except Exception:
+        return _clip(str(inputs), 4000)
+
+
 class CallTrace:
     """Records the input messages and output text of every model call."""
 
@@ -237,51 +218,6 @@ class CallTrace:
             pass
 
 
-def _as_text(value: Any, limit: int | None = 4000) -> str:
-    if isinstance(value, (dict, list, tuple)):
-        try:
-            return _clip(json.dumps(value, ensure_ascii=False, default=str, indent=2), limit)
-        except Exception:
-            pass
-    return _clip(value, limit)
-
-
-def _tool_calls(raw: Any) -> list[dict]:
-    out = []
-    for call in raw or []:
-        if isinstance(call, dict):
-            name, arguments = call.get("name"), call.get("arguments")
-        else:
-            name, arguments = getattr(call, "name", None), getattr(call, "arguments", None)
-        entry: dict = {"name": str(name or "")}
-        if arguments:
-            entry["arguments"] = _clip(arguments, 2000)
-        out.append(entry)
-    return out
-
-
-_INTERNAL_ARGS = {"session", "self", "cls", "ctx", "context"}
-
-
-def _tool_arguments(inputs: Any) -> str:
-    try:
-        args, kwargs = inputs
-        kwargs = {
-            key: value
-            for key, value in (kwargs or {}).items()
-            if key not in _INTERNAL_ARGS and isinstance(value, (str, int, float, bool, list, dict, type(None)))
-        }
-        if not args:
-            payload: Any = kwargs
-        elif not kwargs:
-            payload = list(args)
-        else:
-            payload = {"args": [a for a in args if isinstance(a, (str, int, float, bool, list, dict))], "kwargs": kwargs}
-        return _as_text(payload, 4000)
-    except Exception:
-        return _clip(str(inputs), 4000)
-
-
 class ToolTrace:
     """Records tool calls (name, arguments, result, duration) via callback events.
 
@@ -295,7 +231,7 @@ class ToolTrace:
 
     def install(self) -> bool:
         """Register the observers. Returns ``False`` if unavailable (never raises)."""
-        from topspin_review.backend.runner import on_tool_calls
+        from topspin_review.backend.agent.runner import on_tool_calls
 
         async def _started(*args: Any, **kwargs: Any) -> None:
             key = kwargs.get("tool_id") or kwargs.get("tool_name")
@@ -333,27 +269,12 @@ class ToolTrace:
         return [dict(c) for c in self.calls]
 
 
-class UsageCollector:
-    def __init__(self) -> None:
-        self.usages: list[dict] = []
-
-    def add(self, record: dict | None) -> None:
-        if record:
-            self.usages.append(record)
-
-    def summary(self) -> dict:
-        return summarize(self.usages)
-
-    def records(self) -> list[dict]:
-        return [dict(u) for u in self.usages]
-
-
 class CallbackTrace:
-    """Capture usage for every model call via ``Runner.callback_framework``.
+    """Capture usage for every model call via the Runner's callback framework.
 
-    This is a lighter-weight, framework-native alternative/supplement to
-    :func:`attach`; it observes the global ``LLM_INVOKE_OUTPUT`` event so both
-    vision and text calls are covered without wrapping each model.
+    A lighter-weight, framework-native alternative/supplement to ``attach``; it
+    observes the global LLM-invoke-output event so both vision and text calls are
+    covered without wrapping each model.
     """
 
     def __init__(self) -> None:
@@ -361,7 +282,7 @@ class CallbackTrace:
 
     def install(self) -> bool:
         """Register the observer. Returns ``False`` if unavailable (never raises)."""
-        from topspin_review.backend.runner import on_llm_output
+        from topspin_review.backend.agent.runner import on_llm_output
 
         async def _observe(*args: Any, **kwargs: Any) -> None:
             for obj in list(args) + list(kwargs.values()):
@@ -374,108 +295,3 @@ class CallbackTrace:
 
     def summary(self) -> dict:
         return summarize(self.usages)
-
-
-def model_name(model: Any) -> str:
-    """Best-effort name of the concrete model behind an openjiuwen ``Model``."""
-    for attr in ("model_config", "config"):
-        cfg = getattr(model, attr, None)
-        for key in ("model_name", "model"):
-            name = getattr(cfg, key, None)
-            if name:
-                return str(name)
-    for key in ("model_name", "model"):
-        name = getattr(model, key, None)
-        if name:
-            return str(name)
-    return ""
-
-
-class Recorder:
-    """Run-scoped telemetry, owned by the agent builder.
-
-    Holds the usage collectors (text/vision), the model call-I/O trace, the tool
-    trace and the optional framework callback trace. Built by the builder when an
-    agent is built with recording enabled; application code only reads it.
-    """
-
-    def __init__(self, media_dir: str | Path | None = None) -> None:
-        from topspin_review.backend import settings as backend_settings
-
-        self.calls = CallTrace(
-            record_io=backend_settings.save_call_io(),
-            media_dir=Path(media_dir) if media_dir is not None else None,
-        )
-        self.tools = ToolTrace()
-        self.text = UsageCollector()
-        self.vision = UsageCollector()
-        self.callback = CallbackTrace() if backend_settings.trace_callbacks() else None
-        self._installed = False
-
-    def install(self) -> None:
-        """Install the global tool/callback observers once per run."""
-        if self._installed:
-            return
-        self.tools.install()
-        if self.callback is not None:
-            self.callback.install()
-        self._installed = True
-
-    def usage(self, kind: str = "text") -> UsageCollector:
-        return self.vision if kind == "vision" else self.text
-
-    def models(self) -> dict[str, str]:
-        """The text/vision model + provider identifiers for the usage block."""
-        from topspin_review.backend import settings as backend_settings
-
-        return {
-            "text": backend_settings.text_model_name(),
-            "vision": backend_settings.vision_model_name(),
-            "provider": backend_settings.model_provider(),
-            "api_base": backend_settings.api_base(),
-        }
-
-
-def attach(
-    model: Any,
-    collector: UsageCollector | None = None,
-    trace: CallTrace | None = None,
-    label: str = "report agent",
-) -> Any:
-    """Wrap ``model.invoke`` to record token usage and (optionally) call I/O."""
-    try:
-        original = model.invoke
-    except Exception:
-        return model
-
-    name = model_name(model)
-
-    async def invoke(messages, *args, **kwargs):
-        start = time.monotonic()
-        seq = next_seq()
-        result = await original(messages, *args, **kwargs)
-        record = extract_usage(result)
-        record["seconds"] = round(time.monotonic() - start, 2)
-        if name:
-            record["model"] = name
-        if collector is not None:
-            collector.add(record)
-        if trace is not None:
-            trace.capture(
-                label,
-                messages,
-                getattr(result, "content", result),
-                model=name,
-                tools=kwargs.get("tools"),
-                usage=record,
-                started=start,
-                seq=seq,
-                requested=getattr(result, "tool_calls", None),
-            )
-        return result
-
-    try:
-        model.invoke = invoke
-    except Exception:
-        pass
-    return model

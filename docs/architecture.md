@@ -43,23 +43,36 @@ topspin_review/
 
 `backend/` is the **single home for everything under-the-hood of the agentic
 system**: every openjiuwen import (no `from openjiuwen...` exists anywhere else),
-model/agent access, rails, and telemetry (observability). `config.py` holds only
-*application* settings. Both text and vision go through agents built by the agent
-builder — there is no separate provider transport. The package exposes a small
-façade (`build`, `TextParams`/`VisionParams`, `run_agent`, `ConfigError`,
-`configure_logging`); everything else is internal.
+model/agent access, rails, and telemetry. `config.py` holds only *application*
+settings. Both text and vision go through agents built by the agent builder —
+there is no separate provider transport. The package exposes a small façade
+(`build`, `TextParams`/`VisionParams`, `run_agent`, `ConfigError`,
+`configure_logging`); everything else is internal. Internally it's grouped by
+concern:
 
 ```
 backend/
+├── __init__.py            # the façade
 ├── settings.py            # backend env: keys, model names, timeouts, embeddings, budget/tracing
-├── models.py              # make_text_model() / make_vision_model() — openjiuwen client construction
-├── agent_builder.py       # build(params): the single agent entry point
-├── agent_builder_params.py# Params / TextParams / VisionParams
-├── rails.py               # AgentRail base + TokenBudgetRail + memory_rail() + resolve(names)
-├── observability.py       # usage/trace + timeline + the run Recorder (internal)
-├── tools.py               # make_tool()/make_tools() (openjiuwen tool decoration)
-├── runner.py              # Runner lifecycle, run_agent(), callback-event bridge
-└── logs.py                # route openjiuwen logging to a directory
+├── logs.py                # route openjiuwen logging to a directory
+├── agent/                 # build & run an agent
+│   ├── builder/           #   the agent builder
+│   │   ├── build.py       #     build(params): the single entry point
+│   │   ├── params.py      #     Params / TextParams / VisionParams
+│   │   ├── base.py        #     AgentBuilder (owns recorder + instrumentation)
+│   │   ├── text.py        #     TextBuilder
+│   │   ├── vision.py      #     VisionBuilder
+│   │   └── result.py      #     BuildResult
+│   ├── models/            #   generic model construction
+│   │   ├── builder.py     #     build_model(params) (constructs an openjiuwen Model)
+│   │   └── params.py      #     ModelParams
+│   ├── rails.py           #   AgentRail base + TokenBudgetRail + memory_rail() + resolve(names)
+│   ├── tools.py           #   make_tool()/make_tools() (openjiuwen tool decoration)
+│   └── runner.py          #   Runner lifecycle, run_agent(), callback-event bridge
+└── telemetry/             # run telemetry
+    ├── usage.py           #   token/latency extraction + UsageCollector
+    ├── traces.py          #   CallTrace / ToolTrace / CallbackTrace
+    └── recorder.py        #   Recorder + attach (the builder-owned run recorder)
 ```
 
 ### The analysis package
@@ -96,12 +109,12 @@ analysis/
 All framework access is funnelled through `backend/`; the rest of the app imports
 only `topspin_review.backend`.
 
-- **Model clients** — `backend.models` is **internal** (`make_text_model` /
+- **Model clients** — `backend.agent.models` is **internal** (`make_text_model` /
   `make_vision_model`, lazy `openjiuwen...Model`, reading `backend.settings`). External
   code never imports it.
-- **Agent builder** — `backend.agent_builder.build(params)` is the single entry
+- **Agent builder** — `backend.agent.builder.build(params)` is the single entry
   point: it builds (and instruments) the model, decorates tools, resolves rails and
-  constructs the DeepAgent. The `agent_builder_params` dataclasses (`TextParams`,
+  constructs the DeepAgent. The `backend.agent.params` dataclasses (`TextParams`,
   `VisionParams`) describe the agent. `analysis/report/agent.build_agent` is the
   report policy over `TextParams`; the deterministic and agentic strategies both use
   it (the agentic one overrides the prompt, tools and iterations).
@@ -111,16 +124,16 @@ only `topspin_review.backend`.
   function/docstring/signature). Nothing about tooling decoration is known outside
   `backend`. (External exposure is over MCP — `interfaces/mcp/server.py`, FastMCP.)
 - **Rails** — application code only names rails (`config.rails()`, e.g.
-  `["token_budget", "memory"]`); `backend.agent_builder.build` resolves the names via
-  `backend.rails.resolve()` and builds/attaches the rails. The implementations
+  `["token_budget", "memory"]`); `backend.agent.builder.build` resolves the names via
+  `backend.agent.rails.resolve()` and builds/attaches the rails. The implementations
   (`AgentRail`, `TokenBudgetRail`, `memory_rail()`) never leave `backend`.
-- **Runner** — `backend.runner.start` / `run_agent`, and its callback-event bridge
-  (`on_tool_calls` / `on_llm_output`) used by `backend.observability` traces.
-- **Vision** — `backend.agent_builder.build(VisionParams(...))` builds a DeepAgent
+- **Runner** — `backend.agent.runner.run_agent`, and its callback-event bridge
+  (`on_tool_calls` / `on_llm_output`) used by `backend.telemetry` traces.
+- **Vision** — `backend.agent.builder.build(VisionParams(...))` builds a DeepAgent
   whose model is the vision model, reading rendered images through the `read_file`
   tool (`SysOperationRail` + `enable_read_image_multimodal`). `analysis/vision.py`
   persists contact sheets / motion maps / frames and asks the agent to read them.
-- **Telemetry** — the builder creates a run **Recorder** (`backend.observability`,
+- **Telemetry** — the builder creates a run **Recorder** (`backend.telemetry.recorder`,
   internal) that captures usage/traces; callers never touch it directly. The UI shapes
   it for display in `interfaces/web/timeline.py` (presentation, not backend).
 - **Agents only.** Application code never calls `Model.invoke` directly; every model
