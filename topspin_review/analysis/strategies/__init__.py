@@ -3,9 +3,11 @@
     from topspin_review.analysis import strategies
 
     strategy = strategies.resolve(agentic=True)      # or strategies.get_strategy("deterministic")
-    result = await strategy.analyze(video_path, progress=...)
+    result = await strategy.analyze(strategies.Params(video_path, progress=...))
 """
 
+from topspin_review.analysis.strategies.base import Strategy
+from topspin_review.analysis.strategies.params import Params
 from topspin_review.analysis.strategies.resolve_strategy import (
     AGENTIC,
     DETERMINISTIC,
@@ -14,13 +16,12 @@ from topspin_review.analysis.strategies.resolve_strategy import (
     get_strategy,
     resolve,
 )
-from topspin_review.analysis.strategies.strategy import AnalyzeFn, Strategy
 
 __all__ = [
     "AGENTIC",
     "DETERMINISTIC",
     "STRATEGIES",
-    "AnalyzeFn",
+    "Params",
     "Strategy",
     "default_name",
     "get_strategy",

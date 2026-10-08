@@ -9,8 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from topspin_review.analysis import prompts
-from topspin_review.analysis.coaching import report_tools
+from topspin_review.analysis.coaching import prompts, report_tools
 from topspin_review.backend import TextParams, build
 from topspin_review.bootstrap import setup
 from topspin_review.storage import runtime

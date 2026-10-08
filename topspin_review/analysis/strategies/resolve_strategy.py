@@ -1,32 +1,24 @@
 """The analysis-strategy registry and factory.
 
 Callers obtain a strategy here (by name or via :func:`resolve`); they never
-import a concrete strategy module. To add a strategy, implement an async
-``analyze(video_path, region_box=None, progress=None)`` and register a
-:class:`~topspin_review.analysis.strategies.strategy.Strategy` in ``STRATEGIES``.
+import a concrete strategy module. To add a strategy, subclass
+:class:`~topspin_review.analysis.strategies.base.Strategy` and register an
+instance in ``STRATEGIES``.
 """
 
 from __future__ import annotations
 
 from topspin_review import config
-from topspin_review.analysis.strategies.agentic import analyze as _agentic
-from topspin_review.analysis.strategies.deterministic import analyze as _deterministic
-from topspin_review.analysis.strategies.strategy import Strategy
+from topspin_review.analysis.strategies.agentic import AgenticStrategy
+from topspin_review.analysis.strategies.base import Strategy
+from topspin_review.analysis.strategies.deterministic import DeterministicStrategy
 
 DETERMINISTIC = "deterministic"
 AGENTIC = "agentic"
 
 STRATEGIES: dict[str, Strategy] = {
-    DETERMINISTIC: Strategy(
-        name=DETERMINISTIC,
-        description="Fixed pipeline: measure motion, two vision passes, then write the report.",
-        analyze=_deterministic,
-    ),
-    AGENTIC: Strategy(
-        name=AGENTIC,
-        description="Model-driven: the agent inspects the clip itself and writes the report.",
-        analyze=_agentic,
-    ),
+    DETERMINISTIC: DeterministicStrategy(),
+    AGENTIC: AgenticStrategy(),
 }
 
 

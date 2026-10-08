@@ -102,7 +102,7 @@ def cmd_analyze(path: str, box: str | None = None, agentic: bool = False) -> int
     strategy = strategies.resolve(agentic)
 
     try:
-        outcome = run_async(strategy.analyze(path, region_box=_parse_box(box)))
+        outcome = run_async(strategy.analyze(strategies.Params(video_path=path, region_box=_parse_box(box))))
     except (ConfigError, FileNotFoundError) as exc:
         print(f"error: {exc}")
         return 2

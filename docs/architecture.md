@@ -78,11 +78,13 @@ backend/
 ### The analysis package
 
 `analysis/` is grouped by **business area**: understanding the video, producing the
-coaching report, and the analysis modes. The two **strategies** produce the same
-report shape; everything they share lives in `run_session.py` and `coaching/`. Callers
-obtain a strategy from the `strategies` package (registry: `strategies.resolve(...)`
-/ `get_strategy(name)`) and run `strategy.analyze(...)` — they never import a
-concrete strategy module.
+coaching report, and the analysis modes. The two **strategies** share a base class
+(`base.py`, template method): `analyze` prepares the clip (sample + measure),
+calls the mode-specific `_run`, then finalizes (usage, report patch, export) — so the
+deterministic and agentic modules only implement their real difference. Callers obtain
+a strategy from the `strategies` package (registry: `strategies.resolve(...)` /
+`get_strategy(name)`) and run `strategy.analyze(...)` — they never import a concrete
+strategy module.
 
 ```
 analysis/
@@ -90,20 +92,22 @@ analysis/
 │   ├── build_agent.py     #   build the vision DeepAgent
 │   ├── render_images.py   #   render/save the images the model reads
 │   ├── ask_agent.py       #   ask the vision agent + parse JSON
-│   └── run_passes.py      #   the overview / detail / still passes
+│   ├── run_passes.py      #   the overview / detail / still passes
+│   └── prompts.py         #   vision prompt text
 ├── coaching/              # observations → coaching report
 │   ├── build_agent.py     #   build the report DeepAgent
 │   ├── report_tools.py    #   get_profile / recent_reports / save_report
 │   ├── retrieve_reports.py#   lexical retrieval over past reports
-│   └── verify_issues.py   #   prune issues the evidence doesn't support
-├── strategies/            # the analysis modes
-│   ├── strategy.py        #   Strategy contract (AnalyzeFn + Strategy)
-│   ├── resolve_strategy.py#   STRATEGIES registry + get_strategy()/resolve()
-│   ├── deterministic.py   #   default: measure → two-pass vision → write report
-│   └── agentic.py         #   opt-in: the agent inspects the clip itself
-├── run_session.py         # shared run machinery: Runner, recorder, vision agent
-├── prompts.py             # all prompt text + metric rendering
-└── progress.py            # thread-safe progress reporting
+│   ├── verify_issues.py   #   prune issues the evidence doesn't support
+│   └── prompts.py         #   report / verify prompts + rubrics
+└── strategies/            # the analysis modes + run machinery
+    ├── base.py            #   Strategy base class (template) + shared steps
+    ├── params.py          #   Params: analyze() input + run state
+    ├── progress.py        #   thread-safe progress reporting
+    ├── run_session.py     #   run machinery: Runner, recorder, vision agent
+    ├── resolve_strategy.py#   STRATEGIES registry + get_strategy()/resolve()
+    ├── deterministic.py   #   default: measure → two-pass vision → write report
+    └── agentic.py         #   opt-in: the agent inspects the clip itself
 ```
 
 ## openjiuwen integration
@@ -152,7 +156,7 @@ parts (perception/domain/storage) run without openjiuwen installed.
 ```
 video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
       ─▶ perception.metrics.analyze (energy, shift, subject, mechanics, ball, pose)
-      ─▶ analysis.vision.coarse (contact sheet + prompts.metrics_text) ─▶ windows
+      ─▶ analysis.vision.coarse (contact sheet + perception.metrics.text) ─▶ windows
       ─▶ sampling.sample_window (zoom)
       ─▶ analysis.vision.fine (frames + motion map + pose) ─▶ observations/signals
       ─▶ analysis.coaching.build_agent (DeepAgent + tools) ─▶ report.json
@@ -178,4 +182,4 @@ video ─▶ perception.sampling (motion-weighted, cached in storage.cache)
 - New interface (e.g. gRPC) → add a module under `interfaces/`; reuse
   `interfaces.service`.
 - New perception signal → add to `perception/`, surface it through
-  `perception.metrics.analyze` and `analysis.prompts.metrics_text`.
+  `perception.metrics.analyze` and `perception.metrics.text`.

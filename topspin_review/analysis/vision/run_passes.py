@@ -2,7 +2,7 @@
 
 Each pass composes a prompt over the rendered images (``vision.render_images``), asks the
 vision agent (``vision.ask_agent``) and returns structured JSON. Prompt text lives in
-:mod:`topspin_review.analysis.prompts`.
+:mod:`topspin_review.analysis.vision.prompts`.
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ from typing import Any
 
 from PIL import Image
 
-from topspin_review.analysis import prompts
-from topspin_review.analysis.vision import render_images
+from topspin_review.analysis.vision import prompts, render_images
 from topspin_review.analysis.vision.ask_agent import ask
+from topspin_review.perception import metrics
 
 
 def _duration(meta: dict, timestamps: list[float]) -> float:
@@ -45,7 +45,7 @@ async def coarse(
         level=profile.get("level", "unknown"),
         hand=profile.get("dominant_hand", "right"),
         goal=profile.get("goal", "improve"),
-        metrics=prompts.metrics_text(measured),
+        metrics=metrics.text(measured),
         duration=_duration(meta, timestamps),
     )
     parsed = await ask(agent, f"{prompt}\n\nFirst call read_file on: {sheet_path}")
@@ -78,7 +78,7 @@ async def fine(
         level=profile.get("level", "unknown"),
         hand=profile.get("dominant_hand", "right"),
         goal=profile.get("goal", "improve"),
-        metrics=prompts.metrics_text(measured),
+        metrics=metrics.text(measured),
         windows=rendered,
     )
     files = "\n".join(f"read_file: {p}" for p in paths)

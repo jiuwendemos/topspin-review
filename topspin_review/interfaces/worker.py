@@ -16,7 +16,7 @@ import time
 import traceback
 from pathlib import Path
 
-from topspin_review.analysis.progress import Progress
+from topspin_review.analysis.strategies.progress import Progress
 from topspin_review.bootstrap import run as run_async
 from topspin_review.bootstrap import setup
 
@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     strategy = strategies.resolve(args.agentic)
 
     try:
-        run_async(strategy.analyze(args.video, region_box=_parse_box(args.box), progress=prog))
+        run_async(strategy.analyze(strategies.Params(video_path=args.video, region_box=_parse_box(args.box), progress=prog)))
         prog.finish(Path(args.video).stem)
     except Exception as exc:  # noqa: BLE001
         prog.fail(f"{exc}\n\n{traceback.format_exc()}")

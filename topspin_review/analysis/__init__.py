@@ -4,7 +4,8 @@
 - :mod:`~topspin_review.analysis.coaching` — turn observations into the coaching
   report (report agent, tools, verification, retrieval of past sessions).
 - :mod:`~topspin_review.analysis.strategies` — the analysis modes (`analyze` /
-  `analyze_agentic`).
+  `analyze_agentic`), the run machinery (`run_session`, `progress`) and each mode's
+  own prompt text.
 
-Shared: ``prompts``, ``progress``, ``run_session``. Side-effect free.
+Each area owns its prompts; there are no shared modules at this level. Side-effect free.
 """

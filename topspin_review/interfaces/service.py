@@ -55,7 +55,7 @@ async def analyze_video(
     from topspin_review.analysis import strategies
 
     strategy = strategies.get_strategy(strategies.DETERMINISTIC)
-    return await strategy.analyze(video_path, region_box=region_box)
+    return await strategy.analyze(strategies.Params(video_path=video_path, region_box=region_box))
 
 
 def analyze_video_sync(
