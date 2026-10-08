@@ -533,7 +533,7 @@ def model_name(model: Any) -> str:
     return ""
 
 
-def attach(model: Any, collector: UsageCollector, trace: CallTrace | None = None) -> Any:
+def attach(model: Any, collector: UsageCollector | None = None, trace: CallTrace | None = None) -> Any:
     """Wrap ``model.invoke`` to record token usage and (optionally) call I/O."""
     try:
         original = model.invoke
@@ -550,7 +550,8 @@ def attach(model: Any, collector: UsageCollector, trace: CallTrace | None = None
         record["seconds"] = round(time.monotonic() - start, 2)
         if name:
             record["model"] = name
-        collector.add(record)
+        if collector is not None:
+            collector.add(record)
         if trace is not None:
             trace.capture(
                 "report agent",

@@ -14,9 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from topspin_review import config, observability
 from topspin_review.analysis.vision_telemetry import RecordingVisionBackend
-from topspin_review.backend import get_backend, runner
+from topspin_review.backend import get_backend, observability, runner
 from topspin_review.backend import settings as backend_settings
 from topspin_review.storage import runtime
 
@@ -84,7 +83,7 @@ class RunSession:
 def start_session(video_path: str) -> RunSession:
     """Install model/tool traces and build the vision backend for ``video_path``."""
     call_trace = observability.CallTrace(
-        record_io=config.save_call_io(),
+        record_io=backend_settings.save_call_io(),
         media_dir=runtime.ARTIFACTS_DIR / f"{Path(video_path).stem}_media",
     )
     tool_trace = observability.ToolTrace()

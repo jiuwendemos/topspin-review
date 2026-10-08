@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from topspin_review.backend.models import make_text_model
 from topspin_review.bootstrap import run as run_async
 from topspin_review.storage import store
 
@@ -85,11 +84,9 @@ async def ask(stem: str, question: str) -> str:
     }
     prompt = f"Report:\n{json.dumps(context, ensure_ascii=False)}\n\nQuestion: {question}"
     try:
-        model = make_text_model()
-        result = await model.invoke(
-            [{"role": "system", "content": QA_SYSTEM}, {"role": "user", "content": prompt}]
-        )
-        return getattr(result, "content", str(result)) or ""
+        from topspin_review.analysis.text_agent import run_text_agent
+
+        return await run_text_agent(QA_SYSTEM, prompt)
     except Exception as exc:  # noqa: BLE001
         return f"Could not answer: {exc}"
 

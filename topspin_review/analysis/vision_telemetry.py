@@ -3,7 +3,7 @@
 Providers are pure transport (see :mod:`topspin_review.backend.providers`). This
 wrapper adds the application-side concerns — token/latency usage accounting, model
 call-I/O tracing and event sequencing — and hands callers plain text, mirroring
-what :func:`topspin_review.observability.attach` does for the text model.
+what :func:`topspin_review.backend.observability.attach` does for the text model.
 """
 
 from __future__ import annotations
@@ -11,8 +11,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from topspin_review import observability
-from topspin_review.backend import VisionBackend, get_backend
+from topspin_review.backend import VisionBackend, get_backend, observability
 
 
 class RecordingVisionBackend:

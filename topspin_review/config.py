@@ -74,22 +74,3 @@ def clips_enabled() -> bool:
 def retrieval_enabled() -> bool:
     """Add lexically-retrieved past sessions to the report context."""
     return _bool("RETRIEVAL", "true")
-
-
-def rails_enabled() -> bool:
-    return _bool("RAILS", "true")
-
-
-def trace_callbacks() -> bool:
-    """Use Runner.callback_framework to capture usage across all model calls."""
-    return _bool("TRACE_CALLBACKS", "false")
-
-
-def save_call_io() -> bool:
-    """Persist the full prompt/output text of each model call (privacy-sensitive)."""
-    return _bool("SAVE_CALL_IO", "true")
-
-
-def token_budget() -> int:
-    """Abort the run once cumulative tokens exceed this (0 = unlimited)."""
-    return int(os.getenv("TOKEN_BUDGET", "0"))

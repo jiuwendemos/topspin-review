@@ -8,9 +8,9 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from topspin_review import backend as backends
-from topspin_review import observability as usage
 from topspin_review import reporting as export
 from topspin_review.analysis import vision
+from topspin_review.backend import observability as usage
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import evaluate, progress, report
 from topspin_review.perception import ball, cvutil, metrics

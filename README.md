@@ -91,14 +91,13 @@ topspin-review/
 ├── topspin_review/
 │   ├── __init__.py           # version only (no side effects)
 │   ├── bootstrap.py          # runtime dirs + logging; called by entry points
-│   ├── config.py             # application settings (sampling, toggles, budgets)
-│   ├── observability.py      # token/latency usage (neutral)
+│   ├── config.py             # application settings (sampling, feature toggles)
 │   ├── reporting.py          # Markdown / HTML / PDF export
 │   ├── domain/               # pure: report, progress, compare, evaluate, render
 │   ├── perception/           # sampling, metrics, ball, pose, imaging, cvutil
-│   ├── backend/              # all openjiuwen access: settings, models, agent, rails,
-│   │                         #   tools, runner, logs, providers/ (openai, mock)
-│   ├── analysis/             # strategies/ (deterministic, agentic) + report/ (agent, tools, rails, ...)
+│   ├── backend/              # all agentic under-the-hood: settings, models, agent,
+│   │                         #   rails, tools, runner, logs, observability, providers/
+│   ├── analysis/             # strategies/ (deterministic, agentic) + report/ (agent, tools, ...)
 │   │                         #   prompts, progress, vision, session (shared run machinery)
 │   ├── storage/              # runtime, cache, json_store, store
 │   └── interfaces/           # cli, api, service, mcp/, web/

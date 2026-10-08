@@ -17,8 +17,8 @@ from pathlib import Path
 
 import streamlit as st
 
-from topspin_review import observability
 from topspin_review import reporting as export
+from topspin_review.backend import observability
 from topspin_review.bootstrap import setup
 from topspin_review.domain import compare as compare_mod
 from topspin_review.domain import evaluate, render

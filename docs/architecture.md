@@ -3,9 +3,9 @@
 Topspin Review is layered (hexagonal). Dependencies point **inward** only.
 
 ```
-interfaces  ──▶  analysis  ──▶  providers / perception  ──▶  domain
+interfaces  ──▶  analysis  ──▶  backend / perception  ──▶  domain
                      │                  │
-                     └────▶ observability / storage / reporting
+                     └────▶ storage / reporting
 ```
 
 ## Layers
@@ -13,10 +13,9 @@ interfaces  ──▶  analysis  ──▶  providers / perception  ──▶  d
 | Layer | Package | Responsibility | May depend on |
 |---|---|---|---|
 | Domain | `domain/` | Pure rules: report schema, progress, comparison, scoring, text rendering. No I/O, no third-party libs. | stdlib only |
-| Observability | `observability.py` | Token/latency usage capture (neutral leaf). | stdlib only |
 | Perception | `perception/` | Frames → measurements (sampling, metrics, ball, pose, imaging). | config, storage |
-| Backend | `backend/` | Reaching model providers: connection settings, model-client construction, and one module per vision provider (openai / mock) behind a `Protocol`. Pure transport — imports no application module. | stdlib, openjiuwen |
-| Analysis | `analysis/` | Orchestration: the two analysis strategies, two-pass vision, prompts, and the report-writing agent (agent, tools, rails, retrieval, verification). | perception, backend, storage, domain, reporting, observability, config |
+| Backend | `backend/` | Under-the-hood agentic machinery and provider access: openjiuwen integration (settings, models, agent, rails, tools, runner, logs), telemetry/observability, and one module per vision provider. Imports no application module. | stdlib, openjiuwen |
+| Analysis | `analysis/` | Orchestration: the two analysis strategies, two-pass vision, prompts, and the report-writing agent (agent, tools, retrieval, verification). | perception, backend, storage, domain, reporting, config |
 | Storage | `storage/` | Runtime path layout, JSON helpers, per-video store, frame cache. | config |
 | Reporting | `reporting.py` | Outbound artifacts (Markdown/HTML/PDF). | domain, storage |
 | Interfaces | `interfaces/` | Inbound adapters: CLI, HTTP API, MCP, Streamlit UI, service facade. | anything |
@@ -30,8 +29,7 @@ The rules are enforced by `tests/unit/test_architecture.py` (import direction +
 topspin_review/
 ├── __init__.py            # version only (no side effects)
 ├── bootstrap.py           # runtime dirs + logging; called by entry points
-├── config.py              # application settings only (sampling, toggles, budgets)
-├── observability.py       # token/latency usage (neutral)
+├── config.py              # application settings only (sampling, feature toggles)
 ├── reporting.py           # Markdown / HTML / PDF export
 ├── domain/                # report, progress, compare, evaluate, render
 ├── perception/            # sampling, metrics, ball, pose, imaging, cvutil
@@ -43,19 +41,20 @@ topspin_review/
 
 ### The backend package
 
-`backend/` is the **single home for every openjiuwen import** (no
-`from openjiuwen...` exists anywhere else) and for reaching model endpoints, so
-application code never touches framework or connection details. `config.py` holds
-only *application* settings. Vision providers are **pure transport**: they return
-a `VisionResult` and import no application module — usage accounting, call tracing
+`backend/` is the **single home for everything under-the-hood of the agentic
+system**: every openjiuwen import (no `from openjiuwen...` exists anywhere else),
+provider/model access, rails, and telemetry (observability). `config.py` holds only
+*application* settings. Vision providers are **pure transport**: they return a
+`VisionResult` and import no application module — usage accounting, call tracing
 and event sequencing happen in `analysis/vision_telemetry.py`.
 
 ```
 backend/
-├── settings.py            # connection env: provider, api key/base, model names, timeouts, embeddings
+├── settings.py            # backend env: provider/keys, model names, timeouts, embeddings, rails/budget/tracing
 ├── models.py              # make_text_model() / make_vision_model() — openjiuwen client construction
-├── agent.py               # create_agent() — DeepAgent construction (create_deep_agent)
-├── rails.py               # AgentRail base + memory_rail()
+├── agent.py               # the agents file: create_agent() builds + instruments the model, then the DeepAgent
+├── rails.py               # AgentRail base + TokenBudgetRail + memory_rail() + build_rails()
+├── observability.py       # usage/trace capture + the execution timeline
 ├── tools.py               # the @tool decorator (re-exported)
 ├── runner.py              # Runner lifecycle, run_agent(), callback-event bridge
 ├── logs.py                # route openjiuwen logging to a directory
@@ -85,10 +84,10 @@ analysis/
 ├── report/                # the report-writing layer
 │   ├── agent.py           #   build_agent() — the DeepAgent (reused by both strategies)
 │   ├── tools.py           #   get_profile / recent_reports / save_report
-│   ├── rails.py           #   token-budget + memory rails
 │   ├── retrieval.py       #   lexical retrieval over past reports
 │   └── verification.py    #   prune issues the evidence doesn't support
 ├── session.py             # shared run machinery: Runner, traces, usage, artifacts
+├── text_agent.py          # single-turn tool-less agent helper (verification, Q&A)
 ├── vision.py              # two-pass vision model calls (coarse / fine / still)
 ├── vision_telemetry.py    # recording wrapper: usage + call I/O around a transport backend
 ├── prompts.py             # all prompt text + metric rendering
@@ -100,17 +99,30 @@ analysis/
 All framework access is funnelled through `backend/`; the rest of the app imports
 only `topspin_review.backend`.
 
-- **Model clients** — `backend.models.make_text_model` / `make_vision_model` (lazy `openjiuwen...Model`), reading connection settings from `backend.settings`.
-- **Agent** — `backend.agent.create_agent` (wraps `create_deep_agent`), called by
-  `analysis/report/agent.build_agent`; the deterministic and agentic strategies both
-  use it (the agentic one overrides the prompt, tools and iterations).
+- **Model clients** — `backend.models` is **internal** (`make_text_model` /
+  `make_vision_model`, lazy `openjiuwen...Model`, reading `backend.settings`). External
+  code never imports it.
+- **Agent** — `backend.agent.create_agent` is the agents file: it builds (and
+  instruments) the model, then the DeepAgent. `analysis/report/agent.build_agent` is
+  the report policy over it; the deterministic and agentic strategies both use it
+  (the agentic one overrides the prompt, tools and iterations).
 - **Tools** — `backend.tools.tool` (the `@tool` decorator), used by
   `analysis/report/tools.py`, the agentic strategy's `inspect_window`, and
   `interfaces/mcp/tools.py`.
-- **Rails** — `backend.rails.AgentRail` + `memory_rail()`; `analysis/report/rails.py`
-  builds a `TokenBudgetRail` and the built-in `MemoryRail` (when `EMBED_*` is set).
+- **Rails** — `backend.rails` holds both the framework adapters (`AgentRail`,
+  `TokenBudgetRail`, `memory_rail()`) and the policy (`build_rails()`): token budget
+  from backend settings; `MemoryRail` when `EMBED_*` is set.
 - **Runner** — `backend.runner.start` / `run_agent`, and its callback-event bridge
-  (`on_tool_calls` / `on_llm_output`) used by `observability` traces.
+  (`on_tool_calls` / `on_llm_output`) used by `backend.observability` traces.
+- **Telemetry** — `backend.observability` captures usage/traces and builds the
+  execution timeline; `analysis/vision_telemetry.py` records the vision calls (the
+  text model is recorded via `backend.observability.attach`).
+- **Agents only.** Application code never calls `Model.invoke` directly; every text
+  LLM interaction goes through an openjiuwen agent + `Runner` — the report writer
+  (`analysis/report/agent`), and the tool-less single-turn helper
+  (`analysis/text_agent`) used by verification and report Q&A. The one exception is
+  the vision provider (`backend/providers/openai.py`), which is the framework
+  transport that carries image parts to the model.
 - **Logging** — `backend.logs.configure` routes openjiuwen logging into `runtime/logs/`.
 
 Everything above is optional at import time (lazy imports), so the deterministic

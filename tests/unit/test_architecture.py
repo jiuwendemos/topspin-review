@@ -13,16 +13,15 @@ from pathlib import Path
 PKG = Path(__file__).resolve().parents[2] / "topspin_review"
 
 # Layers that are single modules at the package root (not sub-packages).
-TOP_LAYERS = {"observability", "reporting"}
+TOP_LAYERS = {"reporting"}
 
 # For each layer, the app layers it must NOT import.
 FORBIDDEN: dict[str, set[str]] = {
-    "domain": {"observability", "perception", "analysis", "backend", "storage", "reporting", "interfaces"},
-    "observability": {"domain", "perception", "analysis", "storage", "reporting", "interfaces"},
+    "domain": {"perception", "analysis", "backend", "storage", "reporting", "interfaces"},
     "perception": {"analysis", "backend", "interfaces"},
     "backend": {"domain", "perception", "analysis", "reporting", "interfaces"},
     "storage": {"domain", "perception", "analysis", "backend", "reporting", "interfaces"},
-    "reporting": {"observability", "perception", "analysis", "backend", "interfaces"},
+    "reporting": {"perception", "analysis", "backend", "interfaces"},
     "analysis": {"interfaces"},
 }
 

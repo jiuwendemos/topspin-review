@@ -13,15 +13,14 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from topspin_review import config, observability, reporting
+from topspin_review import config, reporting
 from topspin_review.analysis import prompts, vision
 from topspin_review.analysis.progress import Progress, tick
-from topspin_review.analysis.report import build_agent, build_rails
+from topspin_review.analysis.report import build_agent
 from topspin_review.analysis.report import tools as report_tools
 from topspin_review.analysis.session import ensure_runner, run_agent, start_session
+from topspin_review.backend import build_rails, observability, tool
 from topspin_review.backend import settings as backend_settings
-from topspin_review.backend import tool
-from topspin_review.backend.models import make_text_model
 from topspin_review.bootstrap import setup
 from topspin_review.domain import progress as domain_progress
 from topspin_review.perception import ball, metrics, sampling
@@ -115,11 +114,12 @@ async def analyze(
         }
     )
 
-    report_rails = build_rails() if config.rails_enabled() else []
+    report_rails = build_rails() if backend_settings.rails_enabled() else []
     text_usage = observability.UsageCollector()
     agent = build_agent(
-        model=observability.attach(make_text_model(), text_usage, session.call_trace),
         rails=report_rails,
+        usage=text_usage,
+        trace=session.call_trace,
         system_prompt=prompts.AGENTIC_SYSTEM,
         tools=[*AGENTIC_TOOLS, *report_tools.ALL_TOOLS],
         max_iterations=25,

@@ -67,6 +67,27 @@ def verify_ssl() -> bool:
     return _bool("LLM_SSL_VERIFY", "false")
 
 
+# --- run constraints & observability (under-the-hood behaviour) ------------- #
+def rails_enabled() -> bool:
+    """Attach openjiuwen rails (token budget / memory) to report agents."""
+    return _bool("RAILS", "true")
+
+
+def token_budget() -> int:
+    """Abort a run once cumulative model tokens exceed this (0 = unlimited)."""
+    return int(os.getenv("TOKEN_BUDGET", "0"))
+
+
+def trace_callbacks() -> bool:
+    """Use Runner.callback_framework to capture usage across all model calls."""
+    return _bool("TRACE_CALLBACKS", "false")
+
+
+def save_call_io() -> bool:
+    """Persist the full prompt/output text of each model call (privacy-sensitive)."""
+    return _bool("SAVE_CALL_IO", "true")
+
+
 def has_embedding() -> bool:
     return bool(os.getenv("EMBED_API_KEY")) and bool(os.getenv("EMBED_API_BASE"))
 

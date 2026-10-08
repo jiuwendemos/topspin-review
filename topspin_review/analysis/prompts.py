@@ -131,6 +131,8 @@ Return ONLY a JSON object:
 }}"""
 
 
+VERIFY_SYSTEM = "You verify coaching-report issues against evidence and reply with ONLY the requested JSON."
+
 VERIFY_PROMPT = """You are checking a coaching report against the evidence.
 
 Issues drafted:
