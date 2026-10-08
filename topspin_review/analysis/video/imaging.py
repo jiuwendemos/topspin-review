@@ -1,30 +1,11 @@
-"""Image encoding and compositing helpers for the vision model."""
+"""Image compositing helpers for the vision model (contact sheets, PNG saving)."""
 
 from __future__ import annotations
 
-import base64
-import io
 import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw
-
-
-def to_data_url(img: Image.Image, max_width: int = 768, quality: int = 85) -> str:
-    """Convert one image to a JPEG data URL, downscaled to ``max_width``."""
-    width, height = img.size
-    if width > max_width:
-        scale = max_width / width
-        img = img.resize((max_width, max(1, int(height * scale))))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=quality)
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-    return f"data:image/jpeg;base64,{b64}"
-
-
-def frames_to_data_urls(frames: list[Image.Image], max_width: int = 768, quality: int = 85) -> list[str]:
-    """Convert frames to JPEG data URLs, downscaled to ``max_width``."""
-    return [to_data_url(img, max_width=max_width, quality=quality) for img in frames]
 
 
 def contact_sheet(
